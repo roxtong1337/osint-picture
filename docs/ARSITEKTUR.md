@@ -17,6 +17,10 @@ perangkat · ELA · OCR · pHash    dikembalikan + alasan penolakan
              asal platform · deteksi media generatif
         │
         ▼
+[Analisis Media] deteksi wajah (objek) · anomali tempelan
+                 (rasio ELA) · deepfake · jejak antarmuka
+        │
+        ▼
 [Geolokasi] koordinat → peta, zona waktu, elevasi matahari,
             statistik warna, kandidat berperingkat, daftar periksa
         │
@@ -57,6 +61,7 @@ Semua inti berjalan lokal dan offline. Tautan pencarian balik hanya URL yang dib
 | --- | --- | --- |
 | `forensics.py` | Baca properti teknis berkas | `analyze()`, `_extract_gps()`, `_device_fingerprint()`, `_ela()`, `_perceptual_hashes()` |
 | `verify.py` | Nilai keaslian & asal gambar | `verify()`, `_recompression_estimate()`, `_platform_origin()`, `_ai_generation_indicators()` |
+| `media_forensics.py` | Deteksi manipulasi media | `detect_faces()`, `analyze_face_anomalies()`, `deepfake_signals()`, `social_media_traces()` |
 | `geolocate.py` | Ubah bukti jadi kandidat lokasi | `geolocate()`, `_solar_elevation()`, `_color_stats()` |
 | `reverse_search.py` | Kemiripan & buku kerja pivot | `find_similar()`, `index_image()`, `pivot_plan()`, `record_finding()`, `attribution_chain()` |
 | `batch.py` | Analisis massal & agregasi | `analyze_many()`, `analyze_folder()`, `to_csv()` |
@@ -93,6 +98,36 @@ memberi positif palsu pada gambar datar.
 
 Pencocokan berjalan tanpa internet, sehingga dapat dipakai di lingkungan tertutup
 untuk mendeteksi gambar hoaks yang dipakai ulang.
+
+## Deteksi manipulasi media
+
+Modul `media_forensics.py` menangani sisi pertahanan: membuktikan gambar **palsu**.
+Modul ini tidak melakukan pengenalan wajah, tidak membuat template biometrik, dan
+tidak mencari identitas siapa pun.
+
+**Anomali wajah (rasio ELA).** Wilayah wajah dibandingkan dengan latar memakai
+Error Level Analysis. Rasio ≈ 1 berarti wajah menyatu dengan latar.
+
+| Rasio ELA | Tafsir | Kecurigaan |
+| --- | --- | --- |
+| < 0.70 | penghalusan/retouch, atau wajah hasil render | 0.45 |
+| 0.70 – 1.45 | wajar | 0 |
+| > 1.45 | penajaman atau tempelan berkompresi berbeda | 0.35 |
+
+Wilayah yang dihitung adalah bagian **dalam** kotak wajah (35% tepi dibuang), karena
+kotak detektor Haar lebih longgar dari wajah sebenarnya.
+
+**Batas yang diakui.** Metode ini andal untuk penghalusan, dan **lemah** terhadap
+pergeseran kecerahan halus, kompresi ulang ganda, serta penajaman halus. Bila latar
+pembanding kurang dari 10% gambar atau nyaris rata, hasilnya dinyatakan
+`TIDAK DAPAT DINILAI` — bukan `RENDAH` — agar tidak menyesatkan.
+
+**Jejak antarmuka.** Modul mengembalikan `ui_confidence` bertingkat, bukan klaim biner:
+≥ 0.70 kemungkinan besar tangkapan layar, 0.50–0.69 belum konklusif (periksa manual),
+< 0.50 diabaikan. Sinyal bilah status, watermark sudut, dan garis vertikal hanya dihitung
+pada gambar **portrait**, karena pada foto lanskap sinyal itu hampir selalu hanya langit,
+tanah, atau horizon. Foto lanskap dan foto biasa yang diuji menghasilkan `ui_confidence`
+0.00, sedangkan tangkapan layar portrait 0.85.
 
 ## Aturan kelayakan laporan
 

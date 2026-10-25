@@ -16,6 +16,7 @@ Dibuat untuk Kartika Cyber Hackathon 2026, kategori 04 Cognitive Domain / 03 Cor
 - `app/verify.py` — skor autentisitas, riwayat kompresi, asal platform, deteksi AI
 - `app/geolocate.py` — kandidat lokasi, elevasi matahari, statistik warna
 - `app/reverse_search.py` — indeks hash perseptual lokal, buku kerja, rantai atribusi
+- `app/media_forensics.py` — deteksi wajah (objek saja), anomali tempelan via rasio ELA, deepfake, jejak UI
 - `app/batch.py` — analisis massal + agregasi + CSV
 - `app/identity.py` — ekstraksi pengenal + penyensoran
 - `app/guardrails.py` — gerbang kepatuhan, audit, rantai kustodi
@@ -32,6 +33,13 @@ Dibuat untuk Kartika Cyber Hackathon 2026, kategori 04 Cognitive Domain / 03 Cor
 - Pencocokan kemiripan memakai dHash & pHash; aHash mudah memberi positif palsu.
 - Gambar dengan `detail_level < 0.05` (nyaris rata) harus ditandai tidak andal, bukan dilaporkan cocok.
 - Tes memakai fixture yang me-reload modul setelah mengubah `OSINT_DATA_DIR`.
+- `app/media_forensics.py` memakai OpenCV 4.x (`<5`); OpenCV 5 menghapus `CascadeClassifier`.
+  Berkas cascade ada di `app/cascades/`, diunduh dari repo resmi OpenCV.
+- Rasio ELA memakai wilayah DALAM kotak wajah (`INNER_INSET`); kotak Haar lebih longgar
+  dari wajah sebenarnya sehingga tepinya mengencerkan sinyal.
+- Bila latar pembanding terlalu sempit/rata, kembalikan `TIDAK DAPAT DINILAI`, jangan `RENDAH`.
+- Sinyal jejak UI hanya dihitung pada gambar portrait (`h > w * 1.15`). Foto lanskap dengan
+  langit/tanah polos akan memberi positif palsu bila syarat ini dilepas.
 
 ## Batas keras
 Jangan tambahkan fitur yang menambang data pribadi, menembus sistem, menampilkan

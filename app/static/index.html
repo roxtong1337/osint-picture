@@ -346,6 +346,7 @@ function render(r) {
     <p class="muted">${esc(ip.reporting_rule)}</p></details></div>`;
 
   // Forensik teknis
+  html += renderMedia(r.media_forensics);
   html += renderVerification(r.verification);
   html += renderPivot(r.reverse_search);
   html += `<div class="card" style="margin-top:18px"><h2>Forensik Berkas</h2>
@@ -461,6 +462,54 @@ function downloadBatchCsv() {
   const esc2 = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = [fields.join(',')].concat(rows.map(r => fields.map(f => esc2(r[f])).join(','))).join('\n');
   dl('hasil-batch.csv', csv, 'text/csv');
+}
+
+function renderMedia(m) {
+  if (!m) return '';
+  const f = m.faces, a = m.face_anomalies, d = m.deepfake, t = m.social_media_traces;
+  let h = `<div class="card" style="margin-top:18px"><h2>Analisis Media &amp; Deteksi Manipulasi</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Wajah Terdeteksi</div><div class="v">${f.count}</div></div>
+      <div class="kpi"><div class="k">Anomali Wajah</div><div class="v" style="font-size:15px">${esc(a.band)}</div>
+        <div class="muted">kecurigaan ${a.max_suspicion}</div></div>
+      <div class="kpi"><div class="k">Indikasi Deepfake</div><div class="v">${(d.score*100).toFixed(0)}%</div>
+        <div class="muted">${esc(d.band)}</div></div>
+      <div class="kpi"><div class="k">Jejak Antarmuka</div><div class="v">${t.traces.length}</div></div>
+    </div>`;
+  if (!f.available) h += `<div class="banner warn">Deteksi wajah tidak aktif: ${esc(f.reason || '-')}</div>`;
+  if (f.count) {
+    h += `<table><tr><th>Wajah</th><th>Kotak (x,y,w,h)</th><th>Ketajaman</th><th>Derau</th><th>Kecurigaan</th></tr>` +
+      f.faces.map(x => {
+        const b = x.box;
+        const finding = (a.findings || []).find(y => y.face_index === x.index);
+        return `<tr><td>${x.index}</td><td>${b.x},${b.y},${b.w},${b.h}</td><td>${x.sharpness}</td>
+          <td>${x.noise_sigma}</td><td>${finding ? finding.suspicion : 0}</td></tr>`;
+      }).join('') + `</table>`;
+  }
+  const withSignals = (a.findings || []).filter(x => x.signals.length);
+  if (withSignals.length) {
+    h += `<details open><summary>Temuan anomali (${withSignals.length})</summary><div>`;
+    withSignals.forEach(x => {
+      h += `<div class="cand"><div class="h"><strong>Wajah ${x.face_index}</strong>
+        <span class="conf">${esc(x.band)} · ${x.suspicion}</span></div>
+        <ul class="checklist">${x.signals.map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>`;
+    });
+    h += `</div></details>`;
+  }
+  if (d.signals.length) {
+    h += `<details><summary>Sinyal deepfake (${esc(d.band)})</summary><div>
+      <ul class="checklist">${d.signals.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+      <p class="muted">${esc(d.caveat)}</p></div></details>`;
+  }
+  if (t.traces.length) {
+    h += `<details><summary>Jejak platform (${t.traces.length})</summary><div>
+      <table><tr><th>Sinyal</th><th>Implikasi</th><th>Keyakinan</th></tr>
+      ${t.traces.map(x => `<tr><td>${esc(x.signal)}</td><td>${esc(x.implication)}</td><td>${x.confidence}</td></tr>`).join('')}
+      </table></div></details>`;
+  }
+  h += `<p class="muted" style="margin-top:10px">${esc(m.scope)}</p>
+    <p class="muted">${esc(a.method_note || '')}</p></div>`;
+  return h;
 }
 
 function renderVerification(v) {

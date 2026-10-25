@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import batch, guardrails, report, reverse_search
+from . import batch, guardrails, media_forensics, report, reverse_search
 
 MAX_UPLOAD_BYTES = int(os.environ.get("OSINT_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp", "image/gif"}
@@ -159,6 +159,59 @@ async def index_image(
 @app.get("/api/index/size")
 def index_size() -> dict:
     return {"size": reverse_search.index_size()}
+
+
+@app.post("/api/media")
+async def media_only(
+    image: UploadFile = File(...),
+    purpose: str = Form(...),
+    attestation: bool = Form(False),
+    analyst_name: str = Form(""),
+    note: str = Form(""),
+):
+    """Analisis media saja: deteksi wajah, anomali tempelan, deepfake, jejak UI."""
+    data = await image.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Berkas kosong")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Berkas melebihi batas {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+    if image.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Tipe berkas tidak didukung: {image.content_type}",
+        )
+
+    payload = {
+        "purpose": purpose,
+        "attestation": attestation,
+        "analyst_name": analyst_name,
+        "note": note,
+        "subject_name": "",
+        "subject_email": "",
+        "subject_phone": "",
+        "subject_username": "",
+        "subject_org": "",
+        "face_search": False,
+    }
+    decision = guardrails.screen_request(payload)
+    if not decision["allowed"]:
+        guardrails.log_audit("media_blocked", payload, decision)
+        return JSONResponse({"compliance": decision}, status_code=403)
+
+    try:
+        result = media_forensics.full_media_report(data)
+    except Exception as exc:
+        guardrails.log_audit("media_failed", payload, {"allowed": True, "errors": [str(exc)]})
+        raise HTTPException(status_code=422, detail=f"Gagal menganalisis media: {exc}") from exc
+
+    ref = guardrails.log_audit("media_analysis", payload, decision)
+    result["compliance"] = decision
+    result["audit_ref"] = ref
+    result["file_name"] = image.filename
+    return JSONResponse(result)
 
 
 @app.post("/api/similar")

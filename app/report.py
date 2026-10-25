@@ -8,7 +8,7 @@ from typing import Any
 
 from PIL import Image
 
-from . import forensics, geolocate, guardrails, identity, reverse_search, verify
+from . import forensics, geolocate, guardrails, identity, media_forensics, reverse_search, verify
 
 
 def build_report(
@@ -36,6 +36,7 @@ def build_report(
     ident = identity.pivot(analysis, extra)
     verification = verify.verify(image_bytes, analysis)
     pivot = reverse_search.pivot_bundle(image_bytes, analysis)
+    media = media_forensics.full_media_report(image_bytes) if payload.get("media_analysis", True) else None
 
     custody = guardrails.chain_of_custody(
         analysis["file"]["sha256"], payload.get("analyst_name", ""), payload.get("purpose", "")
@@ -48,9 +49,10 @@ def build_report(
         "file_name": filename,
         "compliance": decision,
         "chain_of_custody": custody,
-        "summary": _summary(analysis, geo, ident, decision, verification),
+        "summary": _summary(analysis, geo, ident, decision, verification, media),
         "forensics": analysis,
         "verification": verification,
+        "media_forensics": media,
         "geolocation": geo,
         "identity_pivot": ident,
         "reverse_search": pivot,
@@ -95,8 +97,14 @@ def _as_list(value: Any) -> list[str]:
     return []
 
 
-def _summary(analysis: dict, geo: dict, ident: dict, decision: dict, verification: dict) -> dict[str, Any]:
+def _summary(
+    analysis: dict, geo: dict, ident: dict, decision: dict, verification: dict, media: dict | None = None
+) -> dict[str, Any]:
     gps = analysis.get("gps")
+    media = media or {}
+    faces = media.get("faces") or {}
+    anomalies = media.get("face_anomalies") or {}
+    deepfake = media.get("deepfake") or {}
     return {
         "compliance_ok": decision["allowed"],
         "location_headline": (
@@ -113,6 +121,10 @@ def _summary(analysis: dict, geo: dict, ident: dict, decision: dict, verificatio
         "authenticity_band": verification["authenticity_band"],
         "likely_origin": verification["platform_origin"]["likely_origin"],
         "ai_likelihood": verification["ai_generation"]["ai_likelihood"],
+        "faces_detected": faces.get("count", 0),
+        "face_anomaly_band": anomalies.get("band", "TIDAK DAPAT DINILAI"),
+        "deepfake_band": deepfake.get("band", "TIDAK DAPAT DINILAI"),
+        "deepfake_score": deepfake.get("score", 0.0),
         "next_action": (
             "Jalankan pencarian gambar balik, lalu verifikasi kandidat lokasi di peta."
             if not gps
@@ -149,6 +161,9 @@ def to_markdown(report: dict[str, Any]) -> str:
     add(f"- Skor autentisitas: {s['authenticity_score']}/100 ({s['authenticity_band']})")
     add(f"- Perkiraan asal unggahan: {s['likely_origin']}")
     add(f"- Indikasi media AI: {s['ai_likelihood']}")
+    add(f"- Wajah terdeteksi: {s.get('faces_detected', 0)}")
+    add(f"- Anomali wajah: {s.get('face_anomaly_band', '-')}")
+    add(f"- Indikasi deepfake: {s.get('deepfake_band', '-')} ({s.get('deepfake_score', 0)})")
     add(f"- Langkah berikutnya: {s['next_action']}")
     add("")
 
@@ -249,7 +264,49 @@ def to_markdown(report: dict[str, Any]) -> str:
         add(f"- [ ] {item}")
     add("")
 
-    add("## 5. Pivot Identitas")
+    media = report.get("media_forensics")
+    if media:
+        add("## 5. Analisis Media & Deteksi Manipulasi")
+        add("")
+        faces = media["faces"]
+        anom = media["face_anomalies"]
+        df = media["deepfake"]
+        traces = media["social_media_traces"]
+        add(f"Wajah terdeteksi: **{faces.get('count', 0)}** · anomali wajah: **{anom.get('band')}** · "
+            f"indikasi deepfake: **{df.get('band')}** ({df.get('score')})")
+        add("")
+        if faces.get("count"):
+            add("| Wajah | Kotak (x,y,w,h) | Ketajaman | Derau | Kecerahan | Kecurigaan |")
+            add("| --- | --- | --- | --- | --- | --- |")
+            for f in faces["faces"]:
+                b = f["box"]
+                finding = next((x for x in anom.get("findings", []) if x["face_index"] == f["index"]), None)
+                susp = finding["suspicion"] if finding else 0
+                add(f"| {f['index']} | {b['x']},{b['y']},{b['w']},{b['h']} | {f['sharpness']} | "
+                    f"{f['noise_sigma']} | {f['brightness']} | {susp} |")
+            add("")
+        for finding in anom.get("findings", []):
+            if finding["signals"]:
+                add(f"**Wajah {finding['face_index']}** — kecurigaan {finding['suspicion']} ({finding['band']}):")
+                for sig in finding["signals"]:
+                    add(f"- {sig}")
+                add("")
+        if df.get("signals"):
+            add("Sinyal deepfake:")
+            for sig in df["signals"]:
+                add(f"- {sig}")
+            add("")
+        if traces.get("traces"):
+            add(f"Jejak antarmuka: {traces['interpretation']}")
+            for t in traces["traces"]:
+                add(f"- {t['signal']} → {t['implication']} (keyakinan {t['confidence']})")
+            add("")
+        add(f"> {anom.get('method_note', '')}")
+        add(f"> {df.get('caveat', '')}")
+        add(f"> {media.get('scope', '')}")
+        add("")
+
+    add("## 6. Pivot Identitas")
     add("")
     ip = report["identity_pivot"]
     if ip["identifiers"]:
@@ -264,7 +321,7 @@ def to_markdown(report: dict[str, Any]) -> str:
         add(f"- Kekurangan bukti: {gap}")
     add("")
 
-    add("## 6. Kepatuhan & Rantai Bukti")
+    add("## 7. Kepatuhan & Rantai Bukti")
     add("")
     c = report["compliance"]
     add(f"- Tujuan: {c.get('purpose')} — {c.get('purpose_description')}")

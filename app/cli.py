@@ -131,6 +131,44 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_media(args: argparse.Namespace) -> int:
+    from . import media_forensics
+
+    data = Path(args.image).read_bytes()
+    payload = {
+        "purpose": args.purpose,
+        "attestation": args.attest,
+        "analyst_name": args.analyst,
+        "note": "",
+    }
+    decision = guardrails.screen_request(payload)
+    if not decision["allowed"]:
+        print("DITOLAK oleh gerbang kepatuhan:")
+        for e in decision["errors"]:
+            print(f"  - {e}")
+        return 2
+    guardrails.log_audit("cli_media", payload, decision)
+
+    r = media_forensics.full_media_report(data)
+    faces = r["faces"]
+    anom = r["face_anomalies"]
+    print(f"Wajah terdeteksi  : {faces.get('count', 0)}")
+    print(f"Anomali wajah     : {anom.get('band')} (kecurigaan {anom.get('max_suspicion')})")
+    for f in anom.get("findings", []):
+        ratio = f["ela_ratio"]
+        print(f"  wajah {f['face_index']}: rasio ELA {ratio} — {f['band']}")
+        for s in f["signals"]:
+            print(f"    - {s}")
+    print(f"Indikasi deepfake : {r['deepfake']['score']} ({r['deepfake']['band']})")
+    for s in r["deepfake"]["signals"]:
+        print(f"    - {s}")
+    print(f"Jejak antarmuka   : {len(r['social_media_traces']['traces'])}")
+    for t in r["social_media_traces"]["traces"]:
+        print(f"    - {t['signal']} → {t['implication']}")
+    print(f"\n{r['scope']}")
+    return 0
+
+
 def cmd_purposes(_: argparse.Namespace) -> int:
     print("Tujuan yang diizinkan:")
     for k, v in guardrails.ALLOWED_PURPOSES.items():
@@ -175,6 +213,13 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("verify", help="Verifikasi autentisitas & asal platform")
     v.add_argument("image")
     v.set_defaults(func=cmd_verify)
+
+    m = sub.add_parser("media", help="Deteksi manipulasi media (wajah, tempelan, deepfake)")
+    m.add_argument("image")
+    m.add_argument("--purpose", required=True)
+    m.add_argument("--attest", action="store_true")
+    m.add_argument("--analyst", default="")
+    m.set_defaults(func=cmd_media)
 
     p = sub.add_parser("purposes", help="Daftar tujuan yang diizinkan")
     p.set_defaults(func=cmd_purposes)

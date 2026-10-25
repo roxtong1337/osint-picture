@@ -262,5 +262,6 @@ def test_report_includes_verification_and_pivot():
     md = result["markdown"]
     assert "## 2. Verifikasi Autentisitas" in md
     assert "## 3. Rencana Pencarian Gambar Balik" in md
-    assert "## 5. Pivot Identitas" in md
-    assert "## 6. Kepatuhan" in md
+    assert "## 5. Analisis Media & Deteksi Manipulasi" in md
+    assert "## 6. Pivot Identitas" in md
+    assert "## 7. Kepatuhan & Rantai Bukti" in md
