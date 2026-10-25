@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TITIK TERANG — Analisis OSINT Gambar</title>
+<meta name="description" content="Platform analisis gambar untuk penegakan hukum, verifikasi jurnalistik, dan pelatihan keamanan siber." />
+<style>
+  :root {
+    --bg: #07090d; --panel: #0e131a; --panel-2: #121922; --line: #232d39;
+    --ink: #e8e6df; --muted: #8b95a3; --accent: #ff3b30; --ok: #38d39f;
+    --warn: #f5a524; --info: #4aa8ff; --mono: ui-monospace, "IBM Plex Mono", Menlo, monospace;
+    --sans: system-ui, "IBM Plex Sans", -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55; }
+  a { color: var(--info); }
+  header { border-bottom: 1px solid var(--line); padding: 18px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .logo { font-family: var(--mono); font-weight: 700; letter-spacing: .18em; font-size: 15px; }
+  .logo span { color: var(--accent); }
+  .tag { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 3px 8px; border-radius: 99px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 26px 20px 80px; }
+  .grid { display: grid; grid-template-columns: 380px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .card h2 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); font-family: var(--mono); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+  input[type=text], input[type=email], input[type=tel], select, textarea, input[type=file] {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 9px 11px; font-size: 14px; font-family: var(--sans);
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; transition: .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--ink); background: #131017; }
+  .drop img { max-width: 100%; max-height: 210px; border-radius: 8px; display: block; margin: 10px auto 0; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chip { border: 1px solid var(--line); border-radius: 99px; padding: 5px 11px; font-size: 12px; cursor: pointer; user-select: none; background: var(--panel-2); }
+  .chip.on { border-color: var(--accent); color: #fff; background: #2a1414; }
+  button.go { width: 100%; margin-top: 18px; background: var(--accent); color: #fff; border: 0; padding: 13px; border-radius: 9px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--sans); }
+  button.go:disabled { opacity: .5; cursor: progress; }
+  .notice { font-size: 12px; color: var(--muted); border-left: 2px solid var(--warn); padding-left: 10px; margin-top: 14px; }
+  .banner { border-radius: 10px; padding: 12px 15px; margin-bottom: 16px; font-size: 13.5px; border: 1px solid; }
+  .banner.err { border-color: #6b1f1f; background: #1e0f10; color: #ffb4ae; }
+  .banner.ok { border-color: #1d5b45; background: #0c1a16; color: #a9efd5; }
+  .banner.warn { border-color: #6b4a12; background: #1c1408; color: #ffd79a; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .kpi .v { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+  .kpi .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .bar { height: 7px; border-radius: 99px; background: #1b232d; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--ok), var(--warn), var(--accent)); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  code { font-family: var(--mono); font-size: 12px; color: #ffd9a0; word-break: break-all; }
+  pre { background: #0a0e13; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; font-size: 12px; }
+  details { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; background: var(--panel-2); }
+  details > summary { cursor: pointer; padding: 12px 15px; font-weight: 600; font-size: 14px; }
+  details > div { padding: 0 15px 15px; }
+  .cand { border: 1px solid var(--line); border-radius: 10px; padding: 13px; margin-bottom: 10px; background: var(--panel-2); }
+  .cand .h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .conf { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); }
+  .links a { display: inline-block; margin: 4px 6px 0 0; font-size: 12px; }
+  .checklist li { font-size: 13px; margin-bottom: 4px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { padding: 7px 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: 13px; }
+  .tab.on { border-color: var(--accent); background: #2a1414; }
+  .empty { color: var(--muted); text-align: center; padding: 50px 20px; font-size: 14px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; border-top: 1px solid var(--line); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff5; border-top-color: #fff; border-radius: 50%; animation: s .7s linear infinite; vertical-align: -2px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">TITIK<span>_</span>TERANG</div>
+  <span class="tag">OSINT Gambar</span>
+  <span class="tag">Kategori 04 Cognitive Domain · 03 Core Infra</span>
+  <span class="tag" style="margin-left:auto">Lawful-by-design</span>
+</header>
+
+<main>
+  <div class="grid">
+    <form class="card" id="form">
+      <h2>Gerbang Kepatuhan</h2>
+
+      <label>Tujuan penggunaan (wajib)</label>
+      <select id="purpose" required><option value="">— pilih tujuan —</option></select>
+
+      <label>Nama analis</label>
+      <input type="text" id="analyst_name" placeholder="mis. Bripka Andi / Red Team PT X" />
+
+      <label>Unggah gambar</label>
+      <div class="drop" id="drop">
+        Klik atau tarik berkas gambar ke sini
+        <div class="muted" style="margin-top:6px">JPEG · PNG · WebP · TIFF · BMP · GIF — maks 25 MB</div>
+        <input type="file" id="file" accept="image/*" hidden />
+        <img id="preview" hidden alt="pratinjau" />
+      </div>
+
+      <label>Deskriptor lanskap (opsional, bisa pilih banyak)</label>
+      <div class="checks" id="desc"></div>
+
+      <label>Nama subjek (opsional)</label>
+      <input type="text" id="subject_name" placeholder="hanya bila ada dasar sah" />
+
+      <label>Email / telepon / username / organisasi (opsional)</label>
+      <input type="email" id="subject_email" placeholder="nama@contoh.com" />
+      <input type="tel" id="subject_phone" placeholder="+62..." style="margin-top:6px" />
+      <input type="text" id="subject_username" placeholder="@username" style="margin-top:6px" />
+      <input type="text" id="subject_org" placeholder="Nama instansi/perusahaan" style="margin-top:6px" />
+
+      <label>Catatan tujuan</label>
+      <textarea id="note" rows="2" placeholder="mis. verifikasi lokasi unggahan akun penyebar hoaks"></textarea>
+
+      <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);margin-top:14px">
+        <input type="checkbox" id="attestation" style="width:auto;margin-top:3px" />
+        <span>Saya menyatakan memiliki dasar hukum/dasar sah, dan tidak akan memakai hasil ini untuk mengawasi orang tanpa izin.</span>
+      </label>
+
+      <label style="display:flex;gap:9px;align-items:center;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);margin-top:10px">
+        <input type="checkbox" id="face_search" style="width:auto" />
+        <span>Izinkan tautan pencarian wajah (butuh dasar hukum kuat)</span>
+      </label>
+
+      <button class="go" type="submit" id="submit">Analisis Sekarang</button>
+      <div class="notice">Tanpa tujuan sah + pernyataan tanggung jawab, analisis tidak akan dijalankan. Semua permintaan tercatat di jejak audit.</div>
+    </form>
+
+    <div>
+      <div id="banners"></div>
+      <div id="output"><div class="card empty">Hasil analisis akan tampil di sini.</div></div>
+      <div class="card" id="casesCard" style="margin-top:18px">
+        <h2>Kasus Terakhir</h2>
+        <div id="cases" class="muted">Memuat…</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  TITIK TERANG v1.0 — purwarupa Kartika Cyber Hackathon 2026. Hasil analisis adalah hipotesis, wajib diverifikasi.
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let FILE = null, DESCRIPTORS = [];
+
+async function boot() {
+  const r = await fetch('/api/purposes').then(x => x.json());
+  r.purposes.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.label;
+    $('purpose').appendChild(o);
+  });
+  $('desc').innerHTML = r.descriptors.map(d =>
+    `<span class="chip" data-id="${d.id}">${d.label}</span>`).join('');
+  $('desc').querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    c.classList.toggle('on');
+    const id = c.dataset.id;
+    DESCRIPTORS = c.classList.contains('on')
+      ? [...DESCRIPTORS, id] : DESCRIPTORS.filter(x => x !== id);
+  });
+  loadCases();
+}
+
+async function loadCases() {
+  try {
+    const { cases } = await fetch('/api/cases').then(x => x.json());
+    if (!cases.length) { $('cases').textContent = 'Belum ada kasus.'; return; }
+    $('cases').innerHTML = `<table><tr><th>ID</th><th>Tujuan</th><th>Risiko</th><th>GPS</th><th>Waktu</th></tr>` +
+      cases.map(c => `<tr><td><code>${c.case_id}</code></td><td>${c.purpose || '-'}</td>
+      <td>${c.risk_score ?? '-'}</td><td>${c.gps_present ? 'ada' : 'tidak'}</td>
+      <td class="muted">${(c.created_at || '').slice(0, 19).replace('T', ' ')}</td></tr>`).join('') + '</table>';
+  } catch (e) { $('cases').textContent = 'Gagal memuat daftar kasus.'; }
+}
+
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+$('file').onchange = e => { if (e.target.files[0]) setFile(e.target.files[0]); };
+
+function setFile(f) {
+  FILE = f;
+  const img = $('preview');
+  img.src = URL.createObjectURL(f);
+  img.hidden = false;
+}
+
+$('form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('banners').innerHTML = '';
+  if (!FILE) { banner('err', 'Pilih gambar terlebih dahulu.'); return; }
+  if (!$('purpose').value) { banner('err', 'Pilih tujuan penggunaan.'); return; }
+
+  const fd = new FormData();
+  fd.append('image', FILE);
+  fd.append('purpose', $('purpose').value);
+  fd.append('attestation', $('attestation').checked);
+  fd.append('analyst_name', $('analyst_name').value);
+  fd.append('subject_name', $('subject_name').value);
+  fd.append('subject_email', $('subject_email').value);
+  fd.append('subject_phone', $('subject_phone').value);
+  fd.append('subject_username', $('subject_username').value);
+  fd.append('subject_org', $('subject_org').value);
+  fd.append('descriptors', DESCRIPTORS.join(','));
+  fd.append('note', $('note').value);
+  fd.append('face_search', $('face_search').checked);
+
+  const btn = $('submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Menganalisis…';
+  try {
+    const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok && !data.forensics) {
+      banner('err', data.detail || 'Permintaan ditolak.');
+      return;
+    }
+    render(data);
+    loadCases();
+  } catch (err) {
+    banner('err', 'Gagal menghubungi server: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analisis Sekarang';
+  }
+};
+
+function banner(kind, msg) {
+  const d = document.createElement('div');
+  d.className = 'banner ' + kind;
+  d.textContent = msg;
+  $('banners').appendChild(d);
+}
+
+function esc(s) { return String(s ?? '-').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(r) {
+  const f = r.forensics, g = r.geolocation, ip = r.identity_pivot, s = r.summary, c = r.compliance;
+
+  if (!c.allowed) banner('err', 'PERMINTAAN DITOLAK KEPATUHAN: ' + c.errors.join(' '));
+  else banner('ok', `Analisis diizinkan · ID kasus ${r.case_id} · referensi audit ${r.audit_ref}`);
+  c.warnings.forEach(w => banner('warn', 'Peringatan: ' + w));
+
+  const risk = f.risk_score;
+  let html = `<div class="card">
+    <h2>Ringkasan</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Skor Risiko</div><div class="v">${risk.score}<span class="muted">/100</span></div>
+        <div class="bar"><i style="width:${risk.score}%"></i></div>
+        <div class="muted">${risk.band}</div></div>
+      <div class="kpi"><div class="k">Kandidat Lokasi</div><div class="v">${s.candidate_locations}</div></div>
+      <div class="kpi"><div class="k">Pengenal</div><div class="v">${s.identifiers_found}</div></div>
+      <div class="kpi"><div class="k">Perangkat</div><div class="v" style="font-size:14px">${esc(s.device)}</div></div>
+    </div>
+    <p style="margin-top:14px">${esc(s.location_headline)}</p>
+    <p class="muted">Langkah berikutnya: ${esc(s.next_action)}</p>
+    <p class="muted">${esc(r.disclaimer)}</p>
+  </div>`;
+
+  // Geolokasi
+  html += `<div class="card" style="margin-top:18px"><h2>Geolokasi</h2>`;
+  if (!g.candidates.length) html += `<p class="muted">Belum ada kandidat. Pilih deskriptor lanskap lalu analisis ulang.</p>`;
+  g.candidates.forEach(cd => {
+    const pct = Math.round(cd.confidence * 100);
+    html += `<div class="cand"><div class="h"><strong>#${cd.rank} ${esc(cd.label)}</strong>
+      <span class="conf">keyakinan ${pct}%</span></div>
+      <div class="muted">Dasar: ${esc(cd.basis.join(', '))} · Presisi: ${esc(cd.precision)}</div>
+      ${cd.clues ? `<div class="muted">Petunjuk: ${esc(cd.clues.join(', '))}</div>` : ''}
+      <div class="links">${(cd.links || []).map(l =>
+        `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider || l.engine)} ↗</a>`).join('')}</div></div>`;
+  });
+  if (g.place_search_links.length) html += `<p class="muted">Pencarian tempat:
+    ${g.place_search_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)}</a>`).join(' · ')}</p>`;
+  html += `<details><summary>Daftar periksa verifikasi (${g.verification_checklist.length})</summary>
+    <div><ul class="checklist">${g.verification_checklist.map(v => `<li>${esc(v)}</li>`).join('')}</ul></div></details>`;
+  html += `<details><summary>Pencarian gambar balik (${g.reverse_image_links.length} mesin)</summary>
+    <div class="links">${g.reverse_image_links.map(l =>
+      `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.engine)} ↗</a><span class="muted"> — ${esc(l.note)}</span><br/>`).join('')}</div></details>`;
+  if (g.color_signals) {
+    const cs = g.color_signals;
+    html += `<details><summary>Sinyal warna &amp; lanskap</summary><div>
+      <table><tr><th>Sinyal</th><th>Rasio</th></tr>
+      <tr><td>Langit</td><td>${cs.sky_ratio}</td></tr>
+      <tr><td>Vegetasi</td><td>${cs.vegetation_ratio}</td></tr>
+      <tr><td>Air</td><td>${cs.water_ratio}</td></tr>
+      <tr><td>Aspal</td><td>${cs.asphalt_ratio}</td></tr>
+      <tr><td>Tanah terbuka</td><td>${cs.soil_ratio}</td></tr></table>
+      <p class="muted">${esc((cs.scene_tags || []).join(' · ') || 'tidak ada sinyal dominan')}</p></div></details>`;
+  }
+  html += `</div>`;
+
+  // Identitas
+  html += `<div class="card" style="margin-top:18px"><h2>Pivot Identitas</h2>`;
+  if (ip.identifiers.length) {
+    html += `<table><tr><th>Jenis</th><th>Nilai</th><th>Asal</th><th>Gerbang legal</th></tr>` +
+      ip.identifiers.map(i => `<tr><td>${esc(i.type)}</td><td><code>${esc(i.value)}</code></td>
+      <td>${esc(i.origin)}</td><td class="muted">${esc(i.legal_gate)}</td></tr>`).join('') + `</table>`;
+    html += ip.identifiers.map(i => `<details><summary>Pivot untuk ${esc(i.type)}: <code>${esc(i.value)}</code></summary>
+      <div class="links">${(i.pivot_links || []).map(l => l.url
+        ? `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)} ↗</a><span class="muted"> — ${esc(l.note)}</span><br/>`
+        : `<div class="muted">${esc(l.provider)} — ${esc(l.note)}</div>`).join('')}</div></details>`).join('');
+  } else {
+    html += `<p class="muted">Tidak ada pengenal terbaca dari gambar.</p>`;
+  }
+  if (ip.person_plan) {
+    html += `<details><summary>Rencana pivot nama: ${esc(ip.person_plan.subject)}</summary><div>
+      <p class="muted">${esc(ip.person_plan.warning)}</p>
+      <div class="links">${ip.person_plan.pivot_links.map(l =>
+        `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)} ↗</a>`).join('')}</div></div></details>`;
+  }
+  if (ip.face_plan) {
+    html += `<details><summary>Pencarian wajah (${esc(ip.face_plan.gate)})</summary><div>
+      <p class="muted">${esc(ip.face_plan.note)}</p>
+      <div class="links">${ip.face_plan.engines.map(l =>
+        `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)} ↗</a><span class="muted"> — ${esc(l.note)}</span><br/>`).join('')}</div></div></details>`;
+  }
+  html += `<details><summary>Sumber publik resmi (${ip.public_sources.length})</summary><div class="links">
+    ${ip.public_sources.map(l => `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.name)} ↗</a><span class="muted"> — ${esc(l.use)}</span><br/>`).join('')}</div></details>`;
+  if (ip.evidence_gaps.length) html += `<details open><summary>Kekurangan bukti</summary><div><ul class="checklist">
+    ${ip.evidence_gaps.map(v => `<li>${esc(v)}</li>`).join('')}</ul></div></details>`;
+  html += `<details><summary>Kebijakan tingkat keyakinan</summary><div><ul class="checklist">
+    ${ip.confidence_policy.map(v => `<li>${esc(v)}</li>`).join('')}</ul></div>
+    <p class="muted">${esc(ip.reporting_rule)}</p></details></div>`;
+
+  // Forensik teknis
+  html += `<div class="card" style="margin-top:18px"><h2>Forensik Berkas</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Format</div><div class="v" style="font-size:15px">${esc(f.file.format)}</div></div>
+      <div class="kpi"><div class="k">Dimensi</div><div class="v" style="font-size:15px">${f.file.width}×${f.file.height}</div></div>
+      <div class="kpi"><div class="k">Ukuran</div><div class="v" style="font-size:15px">${(f.file.size_bytes/1024).toFixed(1)} KB</div></div>
+      <div class="kpi"><div class="k">EXIF</div><div class="v" style="font-size:15px">${f.exif_present ? 'ada' : 'kosong'}</div></div>
+    </div>
+    <table style="margin-top:14px">
+      <tr><th>Hash</th><th>Nilai</th></tr>
+      <tr><td>MD5</td><td><code>${f.file.md5}</code></td></tr>
+      <tr><td>SHA-1</td><td><code>${f.file.sha1}</code></td></tr>
+      <tr><td>SHA-256</td><td><code>${f.file.sha256}</code></td></tr>
+    </table>
+    <details><summary>Perangkat &amp; sinyal anti-forensik</summary><div>
+      <table>
+        <tr><td>Make</td><td>${esc(f.device.make)}</td></tr>
+        <tr><td>Model</td><td>${esc(f.device.model)}</td></tr>
+        <tr><td>Lensa</td><td>${esc(f.device.lens)}</td></tr>
+        <tr><td>Software</td><td>${esc(f.device.software)}</td></tr>
+        <tr><td>Nomor seri bodi</td><td>${f.device.body_serial_present ? 'terbaca' : 'tidak ada'}</td></tr>
+        <tr><td>Kelas perangkat</td><td>${esc(f.device.device_class)}</td></tr>
+      </table>
+      <ul class="checklist">${f.device.counter_forensic_signals.map(v => `<li>${esc(v)}</li>`).join('')}</ul>
+    </div></details>
+    <details><summary>Analisis manipulasi (ELA) — ${esc(f.ela.verdict)}</summary><div>
+      <p class="muted">Rata-rata galat ${f.ela.mean_error} · std ${f.ela.std_error} · P99 ${f.ela.p99_error}</p>
+      ${f.ela.visualization_png_base64 ? `<img src="data:image/png;base64,${f.ela.visualization_png_base64}" style="max-width:100%;border-radius:8px"/>` : ''}
+    </div></details>
+    <details><summary>OCR — ${f.ocr.available ? (f.ocr.text ? 'teks ditemukan' : 'tanpa teks') : 'tidak tersedia'}</summary><div>
+      ${f.ocr.available ? `<pre>${esc(f.ocr.text || '(kosong)')}</pre>` : `<p class="muted">${esc(f.ocr.reason)}</p>`}
+    </div></details>
+    <details><summary>Hash perseptual &amp; sidik jari JPEG</summary><div>
+      <table><tr><th>Metode</th><th>Nilai</th></tr>
+      ${Object.entries(f.hashes_perceptual).map(([k, v]) => `<tr><td>${k}</td><td><code style="font-size:10px">${v}</code></td></tr>`).join('')}
+      ${f.jpeg_signature ? `<tr><td>tabel kuantisasi</td><td><code>${f.jpeg_signature.fingerprint}</code></td></tr>` : ''}
+      </table></div></details>
+    <details><summary>Metadata EXIF lengkap (${Object.keys(f.exif).length} tag)</summary><div>
+      <pre>${esc(JSON.stringify(f.exif, null, 2))}</pre></div></details>
+  </div>`;
+
+  html += `<div class="card" style="margin-top:18px"><h2>Laporan</h2>
+    <button class="chip" onclick="downloadMd()">Unduh laporan Markdown</button>
+    <button class="chip" onclick="downloadJson()">Unduh JSON</button></div>`;
+
+  $('output').innerHTML = html;
+  window.__report = r;
+}
+
+function dl(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+}
+function downloadMd() { dl('laporan-osint.md', window.__report.markdown, 'text/markdown'); }
+function downloadJson() { dl('laporan-osint.json', JSON.stringify(window.__report, null, 2), 'application/json'); }
+
+boot();
+</script>
+</body>
+</html>
