@@ -288,9 +288,18 @@ def to_markdown(report: dict[str, Any]) -> str:
         else:
             add(f"- Geokode balik: tidak dijalankan — {geo.get('reason') or geo.get('error')}")
         for entry in online.get("sign_place_search") or []:
-            if entry.get("ok") and entry.get("results"):
-                best = entry["results"][0]
-                add(f"- Teks papan nama `{entry['query']}` → {best['display_name']} ({best['lat']}, {best['lon']})")
+            if entry.get("ok") and entry.get("best"):
+                best = entry["best"]
+                flag = " **(lemah — tanpa wilayah administratif)**" if entry.get("ambiguous") else ""
+                add(f"- Teks papan nama `{entry['query']}`")
+                add(f"  - Dinormalkan menjadi `{best.get('matched_variant')}`")
+                add(f"  - Hasil: {best['display_name']}{flag}")
+                add(f"  - Koordinat: {best['lat']}, {best['lon']}")
+                if entry.get("reason"):
+                    add(f"  - Peringatan: {entry['reason']}")
+            elif entry.get("variants"):
+                add(f"- Teks papan nama `{entry['query']}`: {entry.get('reason')}")
+                add(f"  - Bentuk kueri yang dicoba: {', '.join(entry['variants'])}")
         y = online.get("yandex") or {}
         if y.get("ok"):
             add(f"- Pencarian gambar balik Yandex: **{y.get('site_count', 0)}** halaman memuat gambar ini")

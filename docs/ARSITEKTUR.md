@@ -190,3 +190,29 @@ menyatakan `parseable: false` — lebih jujur daripada menebak.
 - Hasil bergantung pada gambar pernah dipublikasikan; gambar tertutup tidak akan ketemu.
 - Nominatim membatasi laju permintaan; modul memberi jeda otomatis 1,1 detik.
 - Pencarian wajah daring **tidak** dijalankan, hanya pencarian objek dan sumber.
+
+
+### Akurasi lokasi dari papan nama
+
+Rantainya: OCR membaca teks pada gambar → baris nama jalan dan baris wilayah
+digabung → singkatan dinormalkan → dicari ke Nominatim → hasil terbaik dipilih.
+
+Dua hal yang membuat rantai ini sempat putus:
+
+1. **Singkatan.** `JL. ASIA AFRIKA NO. 12` gagal di Nominatim, sedangkan
+   `Jalan Asia Afrika` berhasil. Singkatan Indonesia dinormalkan lebih dulu,
+   dan nomor rumah/RT/RW dibuang.
+2. **Jalan tanpa kota.** `Jalan Asia Afrika` saja cocok ke Jakarta, padahal
+   papan nama di gambar menyebut `KEC. SUMUR BANDUNG`. Baris jalan dan baris
+   wilayah kini digabung menjadi satu kueri.
+
+**Soal keraguan.** Kecocokan teks yang tinggi hanya berarti namanya sama, bukan
+bahwa lokasinya unik. `Jalan Sudirman` cocok sempurna di puluhan kota. Karena
+itu keraguan ditentukan oleh ada/tidaknya nama kecamatan/kota pada teks, bukan
+oleh skor kecocokan. Kandidat tanpa konteks wilayah diberi keyakinan 0.4 dan
+ditandai lemah.
+
+**Soal deteksi bahasa.** Penanda dicocokkan dengan batas kata. Sebelumnya `kec`
+cocok di dalam `KECELAKAAN`, dan kata `buka` (yang juga dipakai di Malaysia)
+membuat papan nama Indonesia dilabeli Malaysia. Kini penanda dibagi kuat dan
+lemah, dengan skor minimum agar satu kata bersama tidak menentukan kesimpulan.

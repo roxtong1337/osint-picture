@@ -322,7 +322,7 @@ def online_lookup(
 
     # Papan nama pada gambar -> kandidat tempat.
     queries = _place_queries_from_ocr(ocr_text)
-    out["sign_place_search"] = [nominatim_search(q) for q in queries[:3]] if queries else []
+    out["sign_place_search"] = [search_place_with_variants(q) for q in queries[:3]] if queries else []
     out["sign_queries"] = queries
 
     if "yandex" in engines:
@@ -335,22 +335,247 @@ def online_lookup(
 
 
 def _place_queries_from_ocr(ocr_text: str) -> list[str]:
-    """Ambil kandidat nama tempat dari teks pada gambar (papan nama, spanduk)."""
+    """Ambil kandidat nama tempat dari teks pada gambar (papan nama, spanduk).
+
+    Bila gambar memuat nama jalan DAN nama kecamatan/kota, keduanya digabung.
+    Tanpa penggabungan, "Jalan Asia Afrika" saja akan cocok ke kota yang salah
+    padahal papan nama di gambar sudah menyebut wilayahnya.
+    """
     if not ocr_text:
         return []
-    markers = (
-        "jalan", "jl", "jl.", "gang", "gg", "kelurahan", "kecamatan", "kabupaten",
-        "kota", "provinsi", "desa", "kampung", "taman", "blok", "rt", "rw",
-        "street", "road", "avenue", "district", "kab", "kec", "kel",
+
+    street_markers = ("jalan", "jl", "jl.", "gang", "gg", "gg.", "street", "road", "avenue")
+    region_markers = (
+        "kecamatan", "kec", "kec.", "kelurahan", "kel", "kel.", "kabupaten", "kab", "kab.",
+        "kota", "provinsi", "prov", "prov.", "desa", "ds", "dusun", "kampung", "district",
     )
-    out: list[str] = []
+
+    street_lines: list[str] = []
+    region_lines: list[str] = []
+    plain_lines: list[str] = []
+
     for line in ocr_text.splitlines():
         line = line.strip()
         if len(line) < 5 or len(line) > 120:
             continue
-        if any(m in line.lower() for m in markers):
-            out.append(line)
+        low = line.lower()
+        if any(m in low for m in street_markers):
+            street_lines.append(line)
+        elif any(m in low for m in region_markers):
+            region_lines.append(line)
+        elif any(m in low for m in ("taman", "blok", "rt", "rw")):
+            plain_lines.append(line)
+
+    out: list[str] = []
+
+    # Nama jalan + konteks wilayahnya = kueri jauh lebih tepat.
+    for street in street_lines:
+        for region in region_lines:
+            combined = f"{street} {region}"
+            if combined not in out:
+                out.append(combined)
+    # Bila hanya ada nama jalan, tetap pakai (hasilnya akan ditandai ambigu).
+    if not region_lines:
+        out.extend(street_lines)
+    # Baris wilayah saja tetap berguna sebagai kandidat.
+    out.extend(region_lines)
+    out.extend(plain_lines)
+
     return list(dict.fromkeys(out))
+
+
+# Singkatan yang lazim pada papan nama Indonesia. Nominatim tidak mengenalinya,
+# sehingga "JL. ASIA AFRIKA" gagal padahal "Jalan Asia Afrika" berhasil.
+_ABBREVIATIONS = {
+    "jl": "jalan", "jln": "jalan", "jj": "jalan",
+    "gg": "gang", "gg.": "gang",
+    "kec": "kecamatan", "kec.": "kecamatan",
+    "kel": "kelurahan", "kel.": "kelurahan",
+    "kab": "kabupaten", "kab.": "kabupaten",
+    "kecamatan.": "kecamatan", "kelurahan.": "kelurahan",
+    "prov": "provinsi", "prov.": "provinsi",
+    "ds": "desa", "dsn": "dusun", "dus": "dusun",
+    "perum": "perumahan", "komp": "komplek",
+    "st": "street", "rd": "road", "ave": "avenue",
+}
+
+# Kata yang menandakan nomor rumah/RT/RW — bukan bagian nama tempat.
+_NOISE_PATTERNS = (
+    r"\bno\.?\s*\d+[a-z]?\b",
+    r"\bnomor\s*\d+[a-z]?\b",
+    r"\brt\.?\s*\d+\b",
+    r"\brw\.?\s*\d+\b",
+    r"\bblok\s*[a-z0-9]+\b",
+)
+
+
+def _marker_present(text: str, marker: str) -> bool:
+    """Cek penanda dengan batas kata agar 'kec' tidak cocok di dalam 'kecelakaan'.
+
+    Penanda non-ASCII (mis. aksara Jepang) tidak punya batas kata, jadi
+    dicocokkan langsung.
+    """
+    if not marker:
+        return False
+    if marker.isascii():
+        return re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) is not None
+    return marker in text
+
+
+def _matched_markers(text: str, markers: tuple[str, ...]) -> list[str]:
+    """Kembalikan penanda yang cocok, tanpa yang terduplikasi oleh penanda lebih panjang.
+
+    Bila 'kecamatan' sudah cocok, 'kec' tidak perlu dilaporkan lagi.
+    """
+    hits = [m for m in markers if _marker_present(text, m)]
+    hits.sort(key=len, reverse=True)
+    kept: list[str] = []
+    for hit in hits:
+        if not any(hit != other and hit in other for other in kept):
+            kept.append(hit)
+    return kept
+
+
+def _has_region_context(raw: str) -> bool:
+    """Apakah teks menyebut wilayah administratif secara eksplisit?
+
+    Hanya penanda administratif yang dihitung. Kata "kota" dan "desa" sengaja
+    TIDAK dihitung karena sering menjadi bagian nama jalan ("Jalan Kota Baru"),
+    sehingga akan keliru dianggap sebagai konteks wilayah.
+    """
+    text = (raw or "").lower()
+    admin_words = (
+        "kecamatan", "kelurahan", "kabupaten", "provinsi", "kec", "kel", "kab",
+        "prov", "district",
+    )
+    return any(_marker_present(text, w) for w in admin_words)
+
+
+def _has_street_marker(raw: str) -> bool:
+    """Apakah teks menyebut nama jalan/gang?"""
+    text = (raw or "").lower()
+    return any(_marker_present(text, w) for w in ("jalan", "jl", "gang", "gg", "street", "road", "avenue"))
+
+
+def normalize_place_query(raw: str) -> str:
+    """Ubah teks papan nama menjadi kueri yang dapat dipahami basis tempat publik.
+
+    Contoh: "JL. ASIA AFRIKA NO. 12" -> "Jalan Asia Afrika".
+    """
+    text = re.sub(r"[^\w\s\.\-/]", " ", raw or "")
+    for pattern in _NOISE_PATTERNS:
+        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+    tokens: list[str] = []
+    for tok in text.split():
+        key = tok.lower().strip(".")
+        tokens.append(_ABBREVIATIONS.get(key, tok))
+    cleaned = " ".join(tokens)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-/")
+    if not cleaned:
+        return ""
+    return cleaned.title()
+
+
+def place_query_variants(raw: str) -> list[str]:
+    """Hasilkan beberapa bentuk kueri, dari paling spesifik ke paling longgar.
+
+    Nama jalan tanpa konteks kota sangat ambigu, jadi analis perlu melihat bahwa
+    hasilnya lemah. Varian bertingkat membuat peluang menemukan tetap ada tanpa
+    menyamarkan ketidakpastian.
+    """
+    base = normalize_place_query(raw)
+    if not base:
+        return []
+    variants = [base]
+    # Buang kata administratif yang justru mempersempit pencarian terlalu dini.
+    for word in ("Kecamatan", "Kelurahan", "Kabupaten", "Provinsi", "Desa", "Kota"):
+        stripped = re.sub(rf"\b{word}\b", " ", base)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        if stripped and stripped != base and stripped not in variants:
+            variants.append(stripped)
+    # Nama jalan saja (tiga kata pertama) sebagai upaya terakhir.
+    words = base.split()
+    if len(words) > 3:
+        head = " ".join(words[:3])
+        if head not in variants:
+            variants.append(head)
+    return variants
+
+
+def _token_overlap(query: str, display_name: str) -> float:
+    """Seberapa banyak kata kueri yang muncul di nama hasil.
+
+    Dipakai untuk menilai apakah hasil pencarian benar-benar cocok atau hanya
+    kebetulan nama yang sama di kota lain.
+    """
+    q = {t.lower() for t in re.findall(r"\w+", query) if len(t) > 2}
+    if not q:
+        return 0.0
+    d = {t.lower() for t in re.findall(r"\w+", display_name or "")}
+    return len(q & d) / len(q)
+
+
+def search_place_with_variants(raw: str, limit: int = 3) -> dict[str, Any]:
+    """Cari tempat dari teks papan nama, mencoba beberapa bentuk kueri.
+
+    Mengembalikan hasil terbaik beserta tingkat kecocokan, dan menandai dengan
+    jelas bila nama tempat terlalu umum untuk dijadikan bukti lokasi.
+    """
+    variants = place_query_variants(raw)
+    if not variants:
+        return {"ok": False, "query": raw, "variants": [], "results": [], "reason": "teks kosong"}
+
+    attempts: list[dict[str, Any]] = []
+    best: dict[str, Any] | None = None
+    best_score = 0.0
+
+    for variant in variants:
+        res = nominatim_search(variant, limit=limit)
+        attempts.append({"variant": variant, "ok": res.get("ok"), "count": len(res.get("results") or [])})
+        for row in res.get("results") or []:
+            score = _token_overlap(variant, row.get("display_name", ""))
+            if score > best_score:
+                best_score = score
+                best = {**row, "matched_variant": variant, "token_overlap": round(score, 2)}
+
+    if not best:
+        return {
+            "ok": False,
+            "query": raw,
+            "variants": variants,
+            "attempts": attempts,
+            "results": [],
+            "reason": "tidak ada tempat yang cocok di basis data publik",
+        }
+
+    # Kecocokan kata yang tinggi HANYA berarti namanya sama, bukan bahwa lokasinya
+    # unik. "Jalan Sudirman" cocok sempurna di puluhan kota. Karena itu keraguan
+    # ditentukan oleh ada/tidaknya konteks wilayah, bukan oleh skor kecocokan.
+    has_region_context = _has_region_context(raw)
+    ambiguous = not has_region_context
+
+    # Nama jalan yang sangat umum tetap lemah walau ada konteks wilayah.
+    generic_streets = ("sudirman", "thamrin", "merdeka", "diponegoro", "gatot subroto", "ahmad yani", "pemuda", "mawar", "melati")
+    if has_region_context and any(g in (raw or "").lower() for g in generic_streets):
+        ambiguous = True
+
+    return {
+        "ok": True,
+        "query": raw,
+        "variants": variants,
+        "attempts": attempts,
+        "best": best,
+        "results": [best],
+        "ambiguous": ambiguous,
+        "token_overlap": round(best_score, 2),
+        "has_region_context": has_region_context,
+        "reason": (
+            "Teks papan nama tidak menyebut kota/kecamatan, jadi nama ini bisa merujuk ke banyak "
+            "tempat dan tidak cukup dijadikan bukti lokasi."
+            if ambiguous
+            else None
+        ),
+    }
 
 
 def _online_summary(out: dict[str, Any]) -> str:

@@ -85,16 +85,90 @@ LANDSCAPE_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 # Bahasa yang muncul pada OCR -> kandidat negara/wilayah.
-LANGUAGE_HINTS: dict[str, tuple[str, ...]] = {
-    "indonesia": ("jalan", "kecamatan", "kelurahan", "kabupaten", "provinsi", "rt", "rw", "dilarang", "parkir", "hati-hati"),
-    "malaysia": ("jalan", "taman", "kampung", "lebuh", "buka", "tutup", "awas"),
-    "english": ("street", "road", "avenue", "lane", "drive", "please", "warning", "stop"),
-    "jepang": ("通り", "駐車", "禁止", "駅"),
-    "korea": ("주차", "금지", "역"),
-    "arab": ("شارع", "ممنوع", "طريق"),
-    "thailand": ("ถนน", "ห้าม", "ที่จอด"),
-    "vietnam": ("đường", "cấm", "bãi"),
+# Penanda bahasa dipisah menjadi kuat (khas satu wilayah) dan lemah (dipakai
+# bersama). Sebelumnya "buka" ada di daftar Malaysia sehingga papan nama
+# Indonesia "BUKA 24 JAM" salah dilabeli Malaysia. Penilaian berbobot mencegah
+# satu kata bersama menentukan kesimpulan.
+LANGUAGE_MARKERS: dict[str, dict[str, tuple[str, ...]]] = {
+    "indonesia": {
+        "strong": (
+            "kecamatan", "kelurahan", "kabupaten", "provinsi", "dilarang", "parkir",
+            "hati-hati", "rupiah", "sekolah", "puskesmas", "kel", "kec", "kab", "prov",
+        ),
+        "weak": ("jalan", "desa", "kota", "nomor", "rt", "rw"),
+    },
+    "malaysia": {
+        "strong": (
+            "lebuh", "persiaran", "lorong", "bukit", "cukai", "wang", "simpang",
+            "pengawas", "bertam", "jalan raya",
+        ),
+        "weak": ("jalan", "taman", "kampung", "awas", "buka", "tutup"),
+    },
+    "english": {
+        "strong": ("please", "warning", "caution", "speed limit", "no parking"),
+        "weak": ("street", "road", "avenue", "lane", "drive", "stop"),
+    },
+    "jepang": {"strong": ("通り", "駐車", "禁止", "駅"), "weak": ()},
+    "korea": {"strong": ("주차", "금지", "역"), "weak": ()},
+    "arab": {"strong": ("شارع", "ممنوع", "طريق"), "weak": ()},
+    "thailand": {"strong": ("ถนน", "ห้าม", "ที่จอด"), "weak": ()},
+    "vietnam": {"strong": ("đường", "cấm", "bãi"), "weak": ()},
 }
+
+# Skor minimum agar sebuah bahasa dilaporkan. Satu kata lemah tidak cukup.
+_LANGUAGE_MIN_SCORE = 2
+
+
+def _marker_present(text: str, marker: str) -> bool:
+    """Cek penanda dengan batas kata agar 'kec' tidak cocok di dalam 'kecelakaan'."""
+    if not marker:
+        return False
+    if marker.isascii():
+        return re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) is not None
+    return marker in text
+
+
+def _matched_markers(text: str, markers: tuple[str, ...]) -> list[str]:
+    """Penanda yang cocok, tanpa yang sudah terwakili penanda lebih panjang."""
+    hits = [m for m in markers if _marker_present(text, m)]
+    hits.sort(key=len, reverse=True)
+    kept: list[str] = []
+    for hit in hits:
+        if not any(hit != other and hit in other for other in kept):
+            kept.append(hit)
+    return kept
+
+
+def detect_languages(ocr_text: str) -> dict[str, Any]:
+    """Tebak bahasa teks pada gambar dengan skor berbobot dan bukti kata.
+
+    Mengembalikan juga kata pemicu, supaya analis dapat memeriksa dasar
+    kesimpulannya alih-alih menerima label begitu saja.
+    """
+    text = (ocr_text or "").lower()
+    if not text:
+        return {"languages": [], "evidence": {}}
+
+    scored: list[tuple[str, int]] = []
+    evidence: dict[str, list[str]] = {}
+
+    for lang, groups in LANGUAGE_MARKERS.items():
+        hits: list[str] = []
+        score = 0
+        # Batas kata wajib: tanpa itu 'kec' cocok di dalam 'kecelakaan' dan
+        # 'stop' cocok di dalam 'stopkontak'.
+        for word in _matched_markers(text, groups.get("strong", ())):
+            hits.append(word)
+            score += 2
+        for word in _matched_markers(text, groups.get("weak", ())):
+            hits.append(word)
+            score += 1
+        if score >= _LANGUAGE_MIN_SCORE:
+            scored.append((lang, score))
+            evidence[lang] = hits
+
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return {"languages": [lang for lang, _ in scored], "evidence": evidence}
 
 
 def _timezone_from_longitude(lon: float) -> dict[str, Any]:
@@ -243,18 +317,21 @@ def geolocate(analysis: dict[str, Any], descriptors: list[str] | None = None) ->
         )
 
     # Bahasa dari OCR
-    lang_hits: list[str] = []
-    for lang, words in LANGUAGE_HINTS.items():
-        if any(w in ocr_lower for w in words):
-            lang_hits.append(lang)
+    lang_result = detect_languages(ocr_text)
+    lang_hits = lang_result["languages"]
     if lang_hits:
-        verification.append(f"Bahasa pada teks gambar mengarah ke: {', '.join(lang_hits)}.")
+        top = lang_hits[0]
+        evidence = lang_result["evidence"].get(top, [])
+        verification.append(
+            f"Bahasa pada teks gambar mengarah ke: {', '.join(lang_hits)}"
+            + (f" (kata pemicu utama: {', '.join(evidence)})." if evidence else ".")
+        )
         candidates.append(
             {
                 "rank": len(candidates) + 1,
-                "confidence": 0.55,
+                "confidence": 0.55 if len(lang_hits) == 1 else 0.45,
                 "label": f"Wilayah berbahasa: {', '.join(lang_hits)}",
-                "basis": ["Kata kunci OCR pada gambar"],
+                "basis": [f"Kata kunci OCR pada gambar: {', '.join(evidence)}"] if evidence else ["Kata kunci OCR pada gambar"],
                 "precision": "tingkat negara/region",
                 "links": [],
             }
@@ -309,23 +386,60 @@ def geolocate(analysis: dict[str, Any], descriptors: list[str] | None = None) ->
             c["rank"] = i
         verification.insert(0, f"Alamat perangkat lunak: {' > '.join(parts)}")
 
-    # Kandidat tempat dari papan nama (OCR) yang dikonfirmasi Nominatim.
+    # Kandidat tempat dari papan nama (OCR) yang dicocokkan ke basis tempat publik.
+    seen_places: set[str] = set()
     for entry in online.get("sign_place_search") or []:
-        if not entry.get("ok") or not entry.get("results"):
+        if not entry.get("ok"):
             continue
-        best = entry["results"][0]
+        best = entry.get("best") or (entry.get("results") or [None])[0]
+        if not best:
+            continue
+        # Beberapa baris papan nama bisa mengarah ke tempat yang sama; tampilkan sekali.
+        place_key = (best.get("display_name") or "").lower()
+        if place_key in seen_places:
+            continue
+        seen_places.add(place_key)
+        overlap = best.get("token_overlap")
+        ambiguous = bool(entry.get("ambiguous"))
+        has_region = bool(entry.get("has_region_context"))
+        # Keyakinan ditentukan oleh ada/tidaknya konteks wilayah, bukan oleh
+        # kecocokan teks. Kecocokan tinggi hanya berarti namanya sama.
+        if ambiguous:
+            confidence = 0.4
+        elif has_region:
+            confidence = 0.7
+        else:
+            confidence = 0.5
+        basis = [
+            f"Teks papan nama '{entry.get('query')}' dinormalkan menjadi '{best.get('matched_variant')}' "
+            "lalu dicocokkan ke basis tempat publik"
+        ]
+        if overlap is not None:
+            basis.append(f"Kecocokan kata: {overlap}")
+        if has_region:
+            basis.append("Teks menyebut wilayah administratif, sehingga lokasi lebih terarah")
         candidates.append(
             {
                 "rank": len(candidates) + 1,
-                "confidence": 0.65,
+                "confidence": confidence,
                 "label": f"Tempat dari teks gambar: {best.get('display_name')}",
-                "basis": [f"Teks papan nama '{entry.get('query')}' dicocokkan ke basis tempat publik"],
+                "basis": basis,
                 "latitude": best.get("lat"),
                 "longitude": best.get("lon"),
-                "precision": "kandidat kuat, tetap perlu konfirmasi visual",
-                "links": _map_links(best["lat"], best["lon"]),
+                "precision": (
+                    "nama jalan tanpa wilayah administratif — kandidat lemah, wajib konfirmasi visual"
+                    if ambiguous
+                    else "kandidat kuat, tetap perlu konfirmasi visual"
+                ),
+                "ambiguous": ambiguous,
+                "links": _map_links(best["lat"], best["lon"]) if best.get("lat") else [],
             }
         )
+        if ambiguous:
+            verification.append(
+                f"Teks papan nama '{entry.get('query')}' tidak menyebut kecamatan/kota, jadi nama ini "
+                "bisa ada di banyak tempat. Cari petunjuk wilayah lain pada gambar sebelum menerimanya."
+            )
 
     # Sumber daring yang memuat gambar ini (Yandex).
     yandex = online.get("yandex") or {}

@@ -53,3 +53,11 @@ identitas sensitif utuh, atau menjalankan pencarian wajah otomatis.
   halaman Yandex berubah, perbarui fixture itu, jangan melemahkan asersi.
 - `tests/test_osint_online.py` memakai pembungkus `_http_get`/`_http_post`. Tes tidak
   boleh menyentuh jaringan; gunakan monkeypatch pada kedua pembungkus itu.
+
+- Penanda bahasa dan wilayah HARUS dicocokkan dengan batas kata
+  (`_marker_present`). Tanpa itu `kec` cocok di dalam `KECELAKAAN`.
+- Keraguan lokasi ditentukan oleh ada/tidaknya nama kecamatan/kota pada teks,
+  bukan oleh skor kecocokan teks. `Jalan Sudirman` cocok sempurna di puluhan kota.
+- `_has_region_context` hanya menghitung penanda administratif. Kata `kota` dan
+  `desa` sengaja dikecualikan karena sering menjadi bagian nama jalan
+  (`Jalan Kota Baru`).
