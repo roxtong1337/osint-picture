@@ -44,3 +44,12 @@ Dibuat untuk Kartika Cyber Hackathon 2026, kategori 04 Cognitive Domain / 03 Cor
 ## Batas keras
 Jangan tambahkan fitur yang menambang data pribadi, menembus sistem, menampilkan
 identitas sensitif utuh, atau menjalankan pencarian wajah otomatis.
+
+- Modul `osint_online.py` adalah satu-satunya yang mengirim data ke luar. Jangan pernah
+  memanggilnya tanpa `payload["online_lookup"]` yang benar-benar diset analis.
+- Google Lens tidak dapat diurai (hasil dirender JavaScript). Jangan menambahkan parser
+  HTML untuk Lens; kembalikan tautan dan nyatakan `parseable: false`.
+- Yandex diuji lewat `tests/fixtures/yandex_cbir_sample.html` (HTML asli). Bila struktur
+  halaman Yandex berubah, perbarui fixture itu, jangan melemahkan asersi.
+- `tests/test_osint_online.py` memakai pembungkus `_http_get`/`_http_post`. Tes tidak
+  boleh menyentuh jaringan; gunakan monkeypatch pada kedua pembungkus itu.

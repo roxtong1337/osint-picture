@@ -18,7 +18,8 @@ Karena itu TITIK TERANG dirancang **lawful-by-design**: setiap analisis wajib me
 | --- | --- |
 | Forensik berkas | MD5/SHA-1/SHA-256, dimensi, format, sidik jari tabel kuantisasi JPEG |
 | Metadata | Semua tag EXIF, sub-IFD GPS/Exif, make/model/lensa, nomor seri kamera, waktu asli |
-| Geolokasi | Koordinat GPS desimal + peta, zona waktu perkiraan, validasi elevasi matahari, statistik warna lanskap |
+| Geolokasi | Koordinat GPS desimal + peta, **alamat lengkap via geokode balik OpenStreetMap**, kandidat tempat dari teks papan nama, zona waktu, validasi elevasi matahari |
+| Pencarian daring (opsional) | **Pencarian gambar balik Yandex** (temukan halaman yang memuat gambar + label objek), tautan hasil Google Lens, geokode balik GPS → alamat |
 | Verifikasi autentisitas | Skor 0–100, riwayat kompresi ulang, perkiraan kualitas JPEG, deteksi asal platform (WhatsApp/Instagram/Facebook/…), deteksi media generatif |
 | Pencarian balik | Rencana langkah berurutan + tautan 8 mesin, **indeks hash perseptual lokal** untuk cari kemiripan tanpa internet |
 | Deteksi manipulasi | Deteksi wajah (kotak saja, bukan identitas), anomali tempelan via rasio ELA, sinyal deepfake, jejak antarmuka platform |
@@ -50,6 +51,10 @@ Buka `http://localhost:12000`. Uji cepat: `curl localhost:12000/healthz`.
 python3 -m app.cli purposes
 python3 -m app.cli analyze foto.jpg --purpose penegakan_hukum --attest \
     --analyst "Penyidik A" --descriptors perkotaan,jalan_raya --md laporan.md
+
+# Pencarian daring: sumber gambar + alamat dari GPS
+python3 -m app.cli analyze foto.jpg --purpose verifikasi_jurnalistik --attest \
+    --online --engines yandex,lens --md laporan.md
 python3 -m app.cli verify foto.jpg
 python3 -m app.cli index foto.jpg --label "hoaks-2026-08"
 python3 -m app.cli similar foto.jpg
@@ -97,6 +102,7 @@ Alur: unggah → gerbang kepatuhan → forensik → verifikasi autentisitas → 
 | POST | `/api/index` | Tambah gambar ke indeks hash lokal |
 | GET | `/api/index/size` | Ukuran indeks |
 | POST | `/api/media` | Analisis media saja: wajah, anomali tempelan, deepfake, jejak UI |
+| POST | `/api/reverse` | Pencarian daring langsung: gambar balik + geokode balik |
 | POST | `/api/similar` | Cari gambar mirip di indeks |
 | GET | `/api/ledger` | Buku kerja temuan |
 | POST | `/api/ledger/finding` | Catat temuan pencarian |

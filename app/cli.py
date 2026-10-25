@@ -39,6 +39,8 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         "subject_username": args.subject_username or "",
         "subject_org": args.subject_org or "",
         "face_search": args.face_search,
+        "online_lookup": args.online,
+        "online_engines": [e.strip() for e in (args.engines or "yandex,lens").split(",") if e.strip()],
     }
     result = report.build_report(data, Path(args.image).name, payload)
 
@@ -58,6 +60,23 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     print(f"Risiko       : {s['risk_score']}/100 ({s['risk_band']})")
     print(f"Autentisitas : {s['authenticity_score']}/100 ({s['authenticity_band']})")
     print(f"Asal unggah  : {s['likely_origin']}")
+
+    online = (result["forensics"].get("online_lookup") or {})
+    if online:
+        print()
+        print("PENCARIAN DARING")
+        print(f"  {online.get('summary', '')}")
+        geo = online.get("reverse_geocode") or {}
+        if geo.get("ok"):
+            print(f"  Alamat      : {geo.get('display_name')}")
+        y = online.get("yandex") or {}
+        if y.get("ok"):
+            print(f"  Yandex      : {y.get('site_count')} sumber daring | tag: {', '.join(y.get('tags', [])[:5])}")
+            for site in (y.get("sites") or [])[:5]:
+                print(f"    - {site['url'][:95]}")
+        ln = online.get("lens") or {}
+        if ln.get("result_url"):
+            print(f"  Lens        : {ln['result_url'][:95]}")
 
     if args.json:
         Path(args.json).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -190,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--subject-username", dest="subject_username")
     a.add_argument("--subject-org", dest="subject_org")
     a.add_argument("--face-search", action="store_true")
+    a.add_argument(
+        "--online",
+        action="store_true",
+        help="Pencarian daring: unggah gambar ke Yandex/Lens + geokode balik Nominatim",
+    )
+    a.add_argument("--engines", default="yandex,lens", help="Mesin daring: yandex,lens")
     a.add_argument("--json", help="Tulis laporan JSON ke berkas")
     a.add_argument("--md", help="Tulis laporan Markdown ke berkas")
     a.set_defaults(func=cmd_analyze)

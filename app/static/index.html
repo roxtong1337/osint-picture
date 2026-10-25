@@ -124,6 +124,11 @@
         <span>Izinkan tautan pencarian wajah (butuh dasar hukum kuat)</span>
       </label>
 
+      <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);margin-top:10px">
+        <input type="checkbox" id="online_lookup" style="width:auto;margin-top:3px" />
+        <span><strong>Pencarian daring</strong> — unggah gambar ke Yandex/Google Lens untuk mencari sumber, plus geokode balik alamat dari GPS. Gambar akan dikirim ke layanan pihak ketiga.</span>
+      </label>
+
       <button class="go" type="submit" id="submit">Analisis Sekarang</button>
       <div class="notice">Tanpa tujuan sah + pernyataan tanggung jawab, analisis tidak akan dijalankan. Semua permintaan tercatat di jejak audit.</div>
     </form>
@@ -224,6 +229,7 @@ $('form').onsubmit = async (e) => {
   fd.append('descriptors', DESCRIPTORS.join(','));
   fd.append('note', $('note').value);
   fd.append('face_search', $('face_search').checked);
+  fd.append('online_lookup', $('online_lookup').checked);
 
   const btn = $('submit');
   btn.disabled = true;
@@ -254,6 +260,33 @@ function banner(kind, msg) {
 
 function esc(s) { return String(s ?? '-').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+function renderOnline(on) {
+  if (!on) return '';
+  let h = `<div class="cand" style="border-left:3px solid var(--ok,#2e7d32)"><div class="h"><strong>Hasil Pencarian Daring</strong></div>
+    <div class="muted">${esc(on.summary)}</div>`;
+  const geo = on.reverse_geocode || {};
+  if (geo.ok) {
+    h += `<div style="margin-top:8px"><strong>Alamat:</strong> ${esc(geo.display_name)}</div>`;
+    const d = geo.detail || {};
+    h += `<div class="muted">${esc(geo.road || '')} ${esc(geo.village || '')} ${esc(geo.city || '')} ${esc(geo.state || '')} ${esc(geo.postcode || '')} ${esc(geo.country || '')}</div>`;
+  } else {
+    h += `<div class="muted" style="margin-top:6px">Geokode balik: ${esc(geo.reason || geo.error || 'tidak tersedia')}</div>`;
+  }
+  const y = on.yandex || {};
+  if (y.ok) {
+    h += `<div style="margin-top:8px"><strong>Gambar beredar di ${y.site_count} halaman daring</strong></div>`;
+    if (y.tags && y.tags.length) h += `<div class="muted">Label objek: ${esc(y.tags.slice(0,8).join(', '))}</div>`;
+    h += `<div class="links">${(y.sites || []).slice(0,8).map(s =>
+      `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc((s.url.match(/^https?:\/\/([^/]+)/) || [,'sumber'])[1])}${s.width ? ` (${s.width}×${s.height})` : ''} ↗</a>`).join('')}</div>`;
+    if (y.result_url) h += `<div class="links"><a href="${esc(y.result_url)}" target="_blank" rel="noopener">Buka hasil Yandex ↗</a></div>`;
+  }
+  const ln = on.lens || {};
+  if (ln.result_url) h += `<div class="links"><a href="${esc(ln.result_url)}" target="_blank" rel="noopener">Buka hasil Google Lens ↗</a></div>`;
+  if (on.sign_queries && on.sign_queries.length) h += `<div class="muted">Teks papan nama: ${esc(on.sign_queries.join(' | '))}</div>`;
+  h += `<div class="muted" style="margin-top:8px;font-size:11.5px">${esc(on.privacy_notice)}</div></div>`;
+  return h;
+}
+
 function render(r) {
   const f = r.forensics, g = r.geolocation, ip = r.identity_pivot, s = r.summary, c = r.compliance;
 
@@ -282,6 +315,7 @@ function render(r) {
 
   // Geolokasi
   html += `<div class="card" style="margin-top:18px"><h2>Geolokasi</h2>`;
+  html += renderOnline(f.online_lookup);
   if (!g.candidates.length) html += `<p class="muted">Belum ada kandidat. Pilih deskriptor lanskap lalu analisis ulang.</p>`;
   g.candidates.forEach(cd => {
     const pct = Math.round(cd.confidence * 100);

@@ -75,3 +75,16 @@ Berkas tidak pernah dimodifikasi. Bandingkan hash sebelum dan sesudah pemeriksaa
 ## Untuk penilaian hackathon
 
 Kategori **04 Cognitive Domain** menuntut kemampuan memantau dan menganalisis ruang siber sosial. TITIK TERANG menjawab kebutuhan itu dari sisi pertahanan: bukan alat untuk mengintai warga, tetapi alat untuk **memverifikasi** konten, mengukur kebocoran data, dan menegakkan akuntabilitas — dengan pagar etika yang bisa ditunjukkan ke pengadilan.
+
+
+## Pencarian daring dan privasi
+
+Pencarian daring bersifat **opt-in**. Bila diaktifkan, gambar dikirim ke Yandex dan/atau
+Google, dan koordinat dikirim ke OpenStreetMap. Ini berarti:
+
+- Jangan aktifkan pencarian daring untuk materi rahasia, bukti yang belum boleh
+  dipublikasikan, atau gambar yang memuat data pribadi sensitif.
+- Aksi ini tercatat di jejak audit beserta nama analis dan tujuan.
+- Pencarian **wajah** daring tidak dijalankan oleh alat ini. Yang dijalankan hanya
+  pencarian objek dan atribusi sumber.
+- Hasil pencarian balik adalah petunjuk, bukan bukti. Wajib diverifikasi ke sumber asli.

@@ -8,7 +8,16 @@ from typing import Any
 
 from PIL import Image
 
-from . import forensics, geolocate, guardrails, identity, media_forensics, reverse_search, verify
+from . import (
+    forensics,
+    geolocate,
+    guardrails,
+    identity,
+    media_forensics,
+    osint_online,
+    reverse_search,
+    verify,
+)
 
 
 def build_report(
@@ -31,6 +40,22 @@ def build_report(
         "username": payload.get("subject_username") or "",
         "organization": payload.get("subject_org") or "",
     }
+
+    # Pencarian daring bersifat opsional: hanya jalan bila analis memintanya,
+    # karena gambar akan dikirim ke layanan pihak ketiga.
+    online = None
+    if payload.get("online_lookup"):
+        ocr_text = (analysis.get("ocr") or {}).get("text", "")
+        gps = analysis.get("gps") or {}
+        online = osint_online.online_lookup(
+            image_bytes,
+            filename,
+            lat=gps.get("latitude"),
+            lon=gps.get("longitude"),
+            ocr_text=ocr_text,
+            engines=tuple(payload.get("online_engines") or ("yandex", "lens")),
+        )
+        analysis["online_lookup"] = online
 
     geo = geolocate.geolocate(analysis, descriptors)
     ident = identity.pivot(analysis, extra)
@@ -244,6 +269,44 @@ def to_markdown(report: dict[str, Any]) -> str:
 
     add("## 4. Geolokasi")
     add("")
+    online = (report["forensics"].get("online_lookup") or {})
+    if online:
+        add("### Hasil Pencarian Daring")
+        add("")
+        add(f"- {online.get('summary', '')}")
+        geo = online.get("reverse_geocode") or {}
+        if geo.get("ok"):
+            add(f"- **Alamat (geokode balik):** {geo.get('display_name')}")
+            detail = {
+                k: geo.get(k)
+                for k in ("road", "village", "district", "city", "state", "postcode", "country")
+                if geo.get(k)
+            }
+            if detail:
+                add(f"- Rincian: {', '.join(f'{k}={v}' for k, v in detail.items())}")
+            add(f"- Sumber: {geo.get('source')} · diambil {geo.get('retrieved_at')}")
+        else:
+            add(f"- Geokode balik: tidak dijalankan — {geo.get('reason') or geo.get('error')}")
+        for entry in online.get("sign_place_search") or []:
+            if entry.get("ok") and entry.get("results"):
+                best = entry["results"][0]
+                add(f"- Teks papan nama `{entry['query']}` → {best['display_name']} ({best['lat']}, {best['lon']})")
+        y = online.get("yandex") or {}
+        if y.get("ok"):
+            add(f"- Pencarian gambar balik Yandex: **{y.get('site_count', 0)}** halaman memuat gambar ini")
+            for site in (y.get("sites") or [])[:10]:
+                dim = f" ({site['width']}×{site['height']})" if site.get("width") else ""
+                add(f"  - {site['url']}{dim}")
+            if y.get("tags"):
+                add(f"  - Label objek otomatis: {', '.join(y['tags'][:10])}")
+            if y.get("result_url"):
+                add(f"  - [Buka hasil Yandex]({y['result_url']})")
+        ln = online.get("lens") or {}
+        if ln.get("result_url"):
+            add(f"- [Buka hasil Google Lens]({ln['result_url']}) — {ln.get('note', '')}")
+        add(f"- **Catatan privasi:** {online.get('privacy_notice', '')}")
+        add("")
+
     for c in report["geolocation"]["candidates"]:
         add(f"### Kandidat {c['rank']} — {c['label']}")
         add("")

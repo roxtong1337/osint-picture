@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import batch, guardrails, media_forensics, report, reverse_search
+from . import batch, forensics, guardrails, media_forensics, osint_online, report, reverse_search
 
 MAX_UPLOAD_BYTES = int(os.environ.get("OSINT_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp", "image/gif"}
@@ -74,6 +74,8 @@ async def analyze(
     descriptors: str = Form(""),
     note: str = Form(""),
     face_search: bool = Form(False),
+    online_lookup: bool = Form(False),
+    online_engines: str = Form("yandex,lens"),
 ) -> JSONResponse:
     data = await image.read()
     if not data:
@@ -101,6 +103,8 @@ async def analyze(
         "descriptors": descriptors,
         "note": note,
         "face_search": face_search,
+        "online_lookup": online_lookup,
+        "online_engines": [e.strip() for e in online_engines.split(",") if e.strip()],
     }
 
     try:
@@ -210,6 +214,68 @@ async def media_only(
     ref = guardrails.log_audit("media_analysis", payload, decision)
     result["compliance"] = decision
     result["audit_ref"] = ref
+    result["file_name"] = image.filename
+    return JSONResponse(result)
+
+
+@app.post("/api/reverse")
+async def reverse_only(
+    image: UploadFile = File(...),
+    purpose: str = Form(...),
+    attestation: bool = Form(False),
+    analyst_name: str = Form(""),
+    note: str = Form(""),
+    engines: str = Form("yandex,lens"),
+) -> JSONResponse:
+    """Pencarian daring saja: gambar balik + geokode balik dari GPS.
+
+    Gambar dikirim ke layanan pihak ketiga, jadi endpoint ini memerlukan tujuan
+    sah + pernyataan tanggung jawab dan dicatat penuh di jejak audit.
+    """
+    data = await image.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Berkas kosong")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Berkas melebihi batas {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+    if image.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Tipe berkas tidak didukung: {image.content_type}",
+        )
+
+    payload = {
+        "purpose": purpose,
+        "attestation": attestation,
+        "analyst_name": analyst_name,
+        "note": note,
+        "subject_name": "",
+        "subject_email": "",
+        "subject_phone": "",
+        "subject_username": "",
+        "subject_org": "",
+        "face_search": False,
+        "online_lookup": True,
+    }
+    decision = guardrails.screen_request(payload)
+    if not decision["allowed"]:
+        guardrails.log_audit("reverse_blocked", payload, decision)
+        return JSONResponse({"compliance": decision}, status_code=403)
+
+    analysis = forensics.analyze(data)
+    gps = analysis.get("gps") or {}
+    result = osint_online.online_lookup(
+        data,
+        image.filename or "unnamed",
+        lat=gps.get("latitude"),
+        lon=gps.get("longitude"),
+        ocr_text=(analysis.get("ocr") or {}).get("text", ""),
+        engines=tuple(e.strip() for e in engines.split(",") if e.strip()),
+    )
+    result["compliance"] = decision
+    result["audit_ref"] = guardrails.log_audit("reverse_lookup", payload, decision)
     result["file_name"] = image.filename
     return JSONResponse(result)
 

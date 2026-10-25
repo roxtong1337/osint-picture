@@ -163,3 +163,30 @@ Skor ini dipakai sebagai metrik kesadaran: makin tinggi, makin mudah foto itu me
 3. Model pengenalan lanskap lokal (offline) untuk menggantikan heuristik warna.
 4. Tanda tangan kriptografis laporan (Ed25519) agar hasil tidak dapat diubah setelah keluar.
 5. Mode multi-pengguna dengan peran dan pemisahan kasus.
+
+
+## Pencarian daring (`osint_online.py`)
+
+Modul ini adalah satu-satunya bagian yang **mengirim data ke luar**. Karena itu ia tidak
+pernah dijalankan secara otomatis: analis harus mencentang pencarian daring, dan setiap
+panggilan tercatat di jejak audit.
+
+| Layanan | Fungsi | Hasil yang dapat dibaca mesin |
+| --- | --- | --- |
+| Yandex Images | Pencarian gambar balik (unggah berkas) | Ya — halaman sumber + label objek |
+| Google Lens | Pencarian gambar balik (unggah berkas) | Tidak — hanya tautan hasil |
+| OSM Nominatim | Geokode balik (koordinat → alamat) | Ya |
+| OSM Nominatim | Pencarian tempat (teks papan nama → koordinat) | Ya |
+
+**Alur Yandex.** Unggah gambar → API mengembalikan `cbirId` → ambil halaman hasil →
+urai bagian `CbirSitesList` (halaman yang memuat gambar) dan `CbirTags` (label objek).
+
+**Mengapa Google Lens tidak diurai.** Google merender hasil dengan JavaScript, sehingga
+HTML yang diterima tidak memuat data hasil. Modul mengembalikan tautan siap buka dan
+menyatakan `parseable: false` — lebih jujur daripada menebak.
+
+**Batas yang diakui.**
+- Label objek Yandex sering muncul dalam bahasa Rusia atau Inggris.
+- Hasil bergantung pada gambar pernah dipublikasikan; gambar tertutup tidak akan ketemu.
+- Nominatim membatasi laju permintaan; modul memberi jeda otomatis 1,1 detik.
+- Pencarian wajah daring **tidak** dijalankan, hanya pencarian objek dan sumber.

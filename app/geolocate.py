@@ -8,6 +8,7 @@ kandidat lokasi berperingkat beserta tautan verifikasi publik.
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote_plus
@@ -280,6 +281,76 @@ def geolocate(analysis: dict[str, Any], descriptors: list[str] | None = None) ->
     colors = _color_stats_from_analysis(analysis)
     if colors:
         verification.extend(f"Sinyal warna: {t}" for t in colors.get("scene_tags", []))
+
+    # Jawaban konkret bila ada hasil pencarian daring.
+    online = analysis.get("online_lookup") or {}
+    geo = online.get("reverse_geocode") or {}
+    if geo.get("ok"):
+        parts = geo.get("address_parts") or []
+        candidates.insert(
+            0,
+            {
+                "rank": 1,
+                "confidence": 0.97,
+                "label": f"Alamat (geokode balik): {geo.get('display_name')}",
+                "basis": ["Koordinat GPS + geokode balik OpenStreetMap Nominatim"],
+                "latitude": geo.get("lat"),
+                "longitude": geo.get("lon"),
+                "precision": "tingkat jalan/kelurahan (akurasi GPS saat memotret)",
+                "detail": {
+                    k: geo.get(k)
+                    for k in ("road", "village", "district", "city", "state", "postcode", "country")
+                    if geo.get(k)
+                },
+                "links": _map_links(geo["lat"], geo["lon"]),
+            },
+        )
+        for i, c in enumerate(candidates, start=1):
+            c["rank"] = i
+        verification.insert(0, f"Alamat perangkat lunak: {' > '.join(parts)}")
+
+    # Kandidat tempat dari papan nama (OCR) yang dikonfirmasi Nominatim.
+    for entry in online.get("sign_place_search") or []:
+        if not entry.get("ok") or not entry.get("results"):
+            continue
+        best = entry["results"][0]
+        candidates.append(
+            {
+                "rank": len(candidates) + 1,
+                "confidence": 0.65,
+                "label": f"Tempat dari teks gambar: {best.get('display_name')}",
+                "basis": [f"Teks papan nama '{entry.get('query')}' dicocokkan ke basis tempat publik"],
+                "latitude": best.get("lat"),
+                "longitude": best.get("lon"),
+                "precision": "kandidat kuat, tetap perlu konfirmasi visual",
+                "links": _map_links(best["lat"], best["lon"]),
+            }
+        )
+
+    # Sumber daring yang memuat gambar ini (Yandex).
+    yandex = online.get("yandex") or {}
+    if yandex.get("ok") and yandex.get("sites"):
+        hosts = []
+        for s in yandex["sites"]:
+            m = re.match(r"https?://([^/]+)", s.get("url", ""))
+            if m:
+                hosts.append(m.group(1))
+        candidates.append(
+            {
+                "rank": len(candidates) + 1,
+                "confidence": 0.7,
+                "label": f"Gambar ini sudah beredar di {len(yandex['sites'])} halaman daring",
+                "basis": ["Pencarian gambar balik Yandex"],
+                "precision": "atribusi sumber, bukan lokasi",
+                "hosts": list(dict.fromkeys(hosts))[:10],
+                "tags": yandex.get("tags", []),
+                "links": [{"provider": "Hasil Yandex", "url": yandex.get("result_url", "")}],
+            }
+        )
+        verification.insert(
+            0,
+            "Buka sumber daring tersebut: judul, deskripsi, dan tanggal unggah sering menyebut lokasi secara eksplisit.",
+        )
 
     # Pertanyaan geolokasi standar untuk analis
     verification.extend(
