@@ -15,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import ai_vision as app_ai_vision
 from . import batch, forensics, guardrails, report, reverse_search
 
 
@@ -41,6 +42,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         "face_search": args.face_search,
         "online_lookup": args.online,
         "online_engines": [e.strip() for e in (args.engines or "yandex,lens").split(",") if e.strip()],
+        "ai_vision": args.ai,
     }
     result = report.build_report(data, Path(args.image).name, payload)
 
@@ -77,6 +79,18 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         ln = online.get("lens") or {}
         if ln.get("result_url"):
             print(f"  Lens        : {ln['result_url'][:95]}")
+
+    ai = (result["forensics"].get("ai_vision") or {})
+    if ai:
+        print()
+        print("ANALISIS AI PENGLIHATAN")
+        print(f"  {app_ai_vision.summary(ai)}")
+        for cand in (ai.get("candidate_locations") or [])[:4]:
+            print(f"    - {cand['label'][:70]} (keyakinan {cand['confidence']})")
+        if ai.get("visible_text"):
+            print(f"  Teks terbaca: {' | '.join(ai['visible_text'][:6])}")
+        if ai.get("identity_removed"):
+            print("  Catatan: model menyebut identitas pribadi; bagian itu dibuang.")
 
     if args.json:
         Path(args.json).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -215,6 +229,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Pencarian daring: unggah gambar ke Yandex/Lens + geokode balik Nominatim",
     )
     a.add_argument("--engines", default="yandex,lens", help="Mesin daring: yandex,lens")
+    a.add_argument(
+        "--ai",
+        action="store_true",
+        help="Analisis isi gambar dengan model AI penglihatan (kirim gambar ke penyedia AI)",
+    )
     a.add_argument("--json", help="Tulis laporan JSON ke berkas")
     a.add_argument("--md", help="Tulis laporan Markdown ke berkas")
     a.set_defaults(func=cmd_analyze)

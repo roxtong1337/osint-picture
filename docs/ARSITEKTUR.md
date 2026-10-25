@@ -216,3 +216,42 @@ ditandai lemah.
 cocok di dalam `KECELAKAAN`, dan kata `buka` (yang juga dipakai di Malaysia)
 membuat papan nama Indonesia dilabeli Malaysia. Kini penanda dibagi kuat dan
 lemah, dengan skor minimum agar satu kata bersama tidak menentukan kesimpulan.
+
+
+## Analisis AI penglihatan (`ai_vision.py`)
+
+Kode dapat membaca metadata dan mencari kemiripan, tetapi tidak dapat memahami
+isi gambar. Model penglihatan menutup celah itu: membaca tulisan pada papan
+nama, mengenali gaya arsitektur, menandai landmark, dan menyimpulkan wilayah.
+
+Penyedia dipilih otomatis dari variabel lingkungan, sehingga alat tidak terkunci
+pada satu vendor:
+
+| Variabel | Penyedia |
+| --- | --- |
+| `OPENAI_API_KEY` | OpenAI |
+| `GEMINI_API_KEY` atau `GOOGLE_API_KEY` | Google Gemini |
+| `ANTHROPIC_API_KEY` | Anthropic |
+| `OSINT_AI_API_KEY` + `OSINT_AI_BASE_URL` | Endpoint sendiri (Ollama, LM Studio, OpenRouter) |
+
+**Alur.** Gambar diperkecil ke sisi terpanjang 1280 piksel (menjaga biaya token),
+diubah ke base64, dikirim bersama prompt yang meminta JSON. Jawaban diurai,
+disaring, lalu kandidat lokasinya dicari koordinatnya lewat Nominatim agar dapat
+ditampilkan di peta.
+
+**Batas identitas.** Prompt melarang model mengidentifikasi orang. Karena prompt
+saja tidak cukup, hasilnya disaring dua lapis:
+
+1. Hanya bidang di daftar putih yang dipertahankan.
+2. Setiap bidang diperiksa pola data pribadi: surel, NIK 16 digit, nomor telepon
+   Indonesia, nama akun media sosial, alamat IP. Bidang yang memuatnya dibuang
+   dan diganti catatan penolakan.
+
+Pencocokan kata kunci memakai batas kata. Tanpa itu `nik` cocok di dalam
+`ikonik` dan `nama` cocok di dalam `dinamakan`, sehingga peringatan identitas
+muncul pada hasil yang bersih.
+
+**Batas yang diakui.** Model dapat salah dan tetap percaya diri. Karena itu setiap
+kandidat ditandai "dugaan model penglihatan — wajib diverifikasi ke sumber asli",
+dan kandidat dengan keyakinan di bawah 0,6 ditandai ambigu. Model juga boleh
+menjawab `cannot_determine`, dan jawaban itu ditampilkan apa adanya.

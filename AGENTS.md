@@ -61,3 +61,12 @@ identitas sensitif utuh, atau menjalankan pencarian wajah otomatis.
 - `_has_region_context` hanya menghitung penanda administratif. Kata `kota` dan
   `desa` sengaja dikecualikan karena sering menjadi bagian nama jalan
   (`Jalan Kota Baru`).
+
+- `ai_vision.py` mengirim gambar ke penyedia pihak ketiga. Jangan pernah
+  memanggilnya tanpa `payload["ai_vision"]` yang diset analis.
+- Batas identitas ditegakkan dua lapis: daftar bidang diizinkan + penyaring pola
+  data pribadi. Jangan melonggarkan salah satunya. Prompt saja tidak cukup.
+- Pencocokan kata kunci identitas WAJIB memakai batas kata. Tanpa itu `nik`
+  cocok di dalam `ikonik` dan memicu peringatan palsu.
+- Model boleh menjawab `cannot_determine`. Jangan memaksa alat menebak saat
+  model menyatakan bukti kurang.

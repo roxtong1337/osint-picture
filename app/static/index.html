@@ -129,6 +129,11 @@
         <span><strong>Pencarian daring</strong> — unggah gambar ke Yandex/Google Lens untuk mencari sumber, plus geokode balik alamat dari GPS. Gambar akan dikirim ke layanan pihak ketiga.</span>
       </label>
 
+      <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);margin-top:10px">
+        <input type="checkbox" id="ai_vision" style="width:auto;margin-top:3px" />
+        <span><strong>Analisis AI penglihatan</strong> — model AI membaca isi gambar: tulisan, arsitektur, landmark, lalu menebak wilayah. Gambar dikirim ke penyedia AI. Model <em>dilarang</em> mengidentifikasi orang.</span>
+      </label>
+
       <button class="go" type="submit" id="submit">Analisis Sekarang</button>
       <div class="notice">Tanpa tujuan sah + pernyataan tanggung jawab, analisis tidak akan dijalankan. Semua permintaan tercatat di jejak audit.</div>
     </form>
@@ -230,6 +235,7 @@ $('form').onsubmit = async (e) => {
   fd.append('note', $('note').value);
   fd.append('face_search', $('face_search').checked);
   fd.append('online_lookup', $('online_lookup').checked);
+  fd.append('ai_vision', $('ai_vision').checked);
 
   const btn = $('submit');
   btn.disabled = true;
@@ -259,6 +265,33 @@ function banner(kind, msg) {
 }
 
 function esc(s) { return String(s ?? '-').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function renderAI(ai) {
+  if (!ai) return '';
+  let h = `<div class="cand" style="border-left:3px solid #6a5acd"><div class="h"><strong>Analisis AI Penglihatan</strong></div>`;
+  if (!ai.enabled) {
+    h += `<div class="muted">${esc(ai.reason || 'Model AI belum dikonfigurasi.')}</div></div>`;
+    return h;
+  }
+  if (!ai.ok) {
+    h += `<div class="muted">Gagal: ${esc(ai.error || 'tidak diketahui')}</div></div>`;
+    return h;
+  }
+  if (ai.cannot_determine) h += `<div class="muted"><strong>Model menyatakan lokasi tidak dapat ditentukan.</strong> ${esc(ai.limitations || '')}</div>`;
+  (ai.candidate_locations || []).forEach(c => {
+    const pct = Math.round((c.confidence || 0) * 100);
+    h += `<div style="margin-top:8px"><strong>${esc(c.label)}</strong> <span class="conf">${pct}%</span>`;
+    if (c.reasoning) h += `<div class="muted">Alasan: ${esc(c.reasoning)}</div>`;
+    if (c.geocoded_display_name) h += `<div class="muted">Di peta: ${esc(c.geocoded_display_name)}</div>`;
+    h += `</div>`;
+  });
+  if (ai.visible_text && ai.visible_text.length) h += `<div class="muted" style="margin-top:8px">Teks terbaca: ${esc(ai.visible_text.slice(0,8).join(' | '))}</div>`;
+  const facts = [['Isi gambar', ai.scene], ['Landmark', ai.landmarks], ['Arsitektur', ai.architecture], ['Vegetasi', ai.vegetation]];
+  facts.forEach(([k, v]) => { if (v) h += `<div class="muted">${k}: ${esc(Array.isArray(v) ? v.join(' | ') : v)}</div>`; });
+  if (ai.identity_removed && ai.identity_removed.length) h += `<div class="muted" style="color:#b45309">Model menyebut unsur identitas; bagian itu dibuang. Alat ini tidak mengidentifikasi orang.</div>`;
+  h += `<div class="muted" style="margin-top:8px;font-size:11.5px">${esc(ai.privacy_notice || '')}</div></div>`;
+  return h;
+}
 
 function renderOnline(on) {
   if (!on) return '';
@@ -315,6 +348,7 @@ function render(r) {
 
   // Geolokasi
   html += `<div class="card" style="margin-top:18px"><h2>Geolokasi</h2>`;
+  html += renderAI(f.ai_vision);
   html += renderOnline(f.online_lookup);
   if (!g.candidates.length) html += `<p class="muted">Belum ada kandidat. Pilih deskriptor lanskap lalu analisis ulang.</p>`;
   g.candidates.forEach(cd => {

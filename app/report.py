@@ -9,6 +9,7 @@ from typing import Any
 from PIL import Image
 
 from . import (
+    ai_vision,
     forensics,
     geolocate,
     guardrails,
@@ -56,6 +57,12 @@ def build_report(
             engines=tuple(payload.get("online_engines") or ("yandex", "lens")),
         )
         analysis["online_lookup"] = online
+
+    # Analisis AI penglihatan: memahami isi gambar, bukan sekadar metadata.
+    # Gambar dikirim ke penyedia pihak ketiga, jadi wajib diminta analis.
+    if payload.get("ai_vision"):
+        ai = ai_vision.analyze_image(image_bytes, geocode=osint_online.nominatim_search)
+        analysis["ai_vision"] = ai
 
     geo = geolocate.geolocate(analysis, descriptors)
     ident = identity.pivot(analysis, extra)
@@ -269,6 +276,36 @@ def to_markdown(report: dict[str, Any]) -> str:
 
     add("## 4. Geolokasi")
     add("")
+    ai = (report["forensics"].get("ai_vision") or {})
+    if ai:
+        add("### Analisis AI Penglihatan")
+        add("")
+        add(f"- {ai_vision.summary(ai)}")
+        if ai.get("ok"):
+            for cand in ai.get("candidate_locations") or []:
+                line = f"- **{cand['label']}** (keyakinan {cand['confidence']})"
+                if cand.get("reasoning"):
+                    line += f" — {cand['reasoning']}"
+                add(line)
+                if cand.get("geocoded_display_name"):
+                    add(f"  - Ditemukan di peta: {cand['geocoded_display_name']} ({cand.get('latitude')}, {cand.get('longitude')})")
+            if ai.get("visible_text"):
+                add(f"- Teks terbaca model: {' | '.join(ai['visible_text'][:10])}")
+            for key, label in (
+                ("scene", "Isi gambar"), ("landmarks", "Landmark"), ("architecture", "Arsitektur"),
+                ("vegetation", "Vegetasi"), ("road_markings", "Marka jalan"), ("currency", "Mata uang"),
+                ("vehicle_plates_format", "Format pelat"),
+            ):
+                val = ai.get(key)
+                if val:
+                    add(f"- {label}: {' | '.join(val) if isinstance(val, list) else val}")
+            if ai.get("limitations"):
+                add(f"- Keterbatasan menurut model: {ai['limitations']}")
+            if ai.get("identity_removed"):
+                add(f"- **Batas identitas ditegakkan:** model menyebut {', '.join(ai['identity_removed'])}; bagian itu dibuang.")
+        add(f"- {ai.get('privacy_notice', '')}")
+        add("")
+
     online = (report["forensics"].get("online_lookup") or {})
     if online:
         add("### Hasil Pencarian Daring")

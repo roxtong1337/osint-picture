@@ -11,7 +11,16 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import batch, forensics, guardrails, media_forensics, osint_online, report, reverse_search
+from . import (
+    ai_vision as app_ai_vision,
+    batch,
+    forensics,
+    guardrails,
+    media_forensics,
+    osint_online,
+    report,
+    reverse_search,
+)
 
 MAX_UPLOAD_BYTES = int(os.environ.get("OSINT_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp", "image/gif"}
@@ -76,6 +85,7 @@ async def analyze(
     face_search: bool = Form(False),
     online_lookup: bool = Form(False),
     online_engines: str = Form("yandex,lens"),
+    ai_vision: bool = Form(False),
 ) -> JSONResponse:
     data = await image.read()
     if not data:
@@ -105,6 +115,7 @@ async def analyze(
         "face_search": face_search,
         "online_lookup": online_lookup,
         "online_engines": [e.strip() for e in online_engines.split(",") if e.strip()],
+        "ai_vision": ai_vision,
     }
 
     try:
@@ -226,6 +237,7 @@ async def reverse_only(
     analyst_name: str = Form(""),
     note: str = Form(""),
     engines: str = Form("yandex,lens"),
+    ai_vision: bool = Form(False),
 ) -> JSONResponse:
     """Pencarian daring saja: gambar balik + geokode balik dari GPS.
 
@@ -274,6 +286,8 @@ async def reverse_only(
         ocr_text=(analysis.get("ocr") or {}).get("text", ""),
         engines=tuple(e.strip() for e in engines.split(",") if e.strip()),
     )
+    if ai_vision:
+        result["ai_vision"] = app_ai_vision.analyze_image(data, geocode=osint_online.nominatim_search)
     result["compliance"] = decision
     result["audit_ref"] = guardrails.log_audit("reverse_lookup", payload, decision)
     result["file_name"] = image.filename

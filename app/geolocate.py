@@ -441,6 +441,61 @@ def geolocate(analysis: dict[str, Any], descriptors: list[str] | None = None) ->
                 "bisa ada di banyak tempat. Cari petunjuk wilayah lain pada gambar sebelum menerimanya."
             )
 
+    # Kandidat dari model AI penglihatan: memahami isi gambar (tulisan, gaya
+    # bangunan, landmark). Keyakinan mengikuti penilaian model, dan ditandai
+    # agar analis tahu ini dugaan model, bukan pengukuran.
+    ai = analysis.get("ai_vision") or {}
+    if ai.get("ok"):
+        for cand in (ai.get("candidate_locations") or [])[:4]:
+            label = cand.get("label")
+            if not label:
+                continue
+            key = label.strip().lower()
+            if key in seen_places:
+                continue
+            seen_places.add(key)
+            confidence = cand.get("confidence")
+            try:
+                confidence = float(confidence) if confidence is not None else 0.4
+            except (TypeError, ValueError):
+                confidence = 0.4
+            basis = ["Model AI penglihatan membaca isi gambar"]
+            if cand.get("reasoning"):
+                basis.append(f"Alasan model: {cand['reasoning']}")
+            if ai.get("visible_text"):
+                basis.append("Teks terbaca: " + " | ".join(ai["visible_text"][:5]))
+            candidates.append(
+                {
+                    "rank": len(candidates) + 1,
+                    "confidence": max(0.0, min(1.0, confidence)),
+                    "label": f"Dugaan AI: {label}",
+                    "basis": basis,
+                    "latitude": cand.get("latitude"),
+                    "longitude": cand.get("longitude"),
+                    "precision": "dugaan model penglihatan — wajib diverifikasi ke sumber asli",
+                    "ambiguous": confidence < 0.6,
+                    "links": (
+                        _map_links(cand["latitude"], cand["longitude"])
+                        if cand.get("latitude") and cand.get("longitude")
+                        else []
+                    ),
+                }
+            )
+        if ai.get("cannot_determine"):
+            verification.append(
+                "Model AI menyatakan lokasi tidak dapat ditentukan dari gambar ini. "
+                f"Yang masih kurang: {ai.get('limitations', 'tidak disebutkan')}"
+            )
+        if ai.get("visible_text"):
+            verification.append(
+                "Teks yang terbaca model: " + " | ".join(ai["visible_text"][:8])
+            )
+        if ai.get("identity_removed"):
+            verification.append(
+                "Model sempat menyebut unsur identitas pribadi; bagian itu dibuang. "
+                "Alat ini tidak mengidentifikasi orang."
+            )
+
     # Sumber daring yang memuat gambar ini (Yandex).
     yandex = online.get("yandex") or {}
     if yandex.get("ok") and yandex.get("sites"):

@@ -20,6 +20,7 @@ Karena itu TITIK TERANG dirancang **lawful-by-design**: setiap analisis wajib me
 | Metadata | Semua tag EXIF, sub-IFD GPS/Exif, make/model/lensa, nomor seri kamera, waktu asli |
 | Geolokasi | Koordinat GPS desimal + peta, **alamat lengkap via geokode balik OpenStreetMap**, kandidat tempat dari teks papan nama, zona waktu, validasi elevasi matahari |
 | Pencarian daring (opsional) | **Pencarian gambar balik Yandex** (temukan halaman yang memuat gambar + label objek), tautan hasil Google Lens, geokode balik GPS → alamat |
+| AI penglihatan (opsional) | Model AI membaca **isi gambar**: tulisan pada papan nama, arsitektur, landmark, vegetasi, mata uang → dugaan wilayah + koordinat. Mendukung OpenAI, Gemini, Anthropic, atau endpoint sendiri |
 | Verifikasi autentisitas | Skor 0–100, riwayat kompresi ulang, perkiraan kualitas JPEG, deteksi asal platform (WhatsApp/Instagram/Facebook/…), deteksi media generatif |
 | Pencarian balik | Rencana langkah berurutan + tautan 8 mesin, **indeks hash perseptual lokal** untuk cari kemiripan tanpa internet |
 | Deteksi manipulasi | Deteksi wajah (kotak saja, bukan identitas), anomali tempelan via rasio ELA, sinyal deepfake, jejak antarmuka platform |
@@ -55,6 +56,11 @@ python3 -m app.cli analyze foto.jpg --purpose penegakan_hukum --attest \
 # Pencarian daring: sumber gambar + alamat dari GPS
 python3 -m app.cli analyze foto.jpg --purpose verifikasi_jurnalistik --attest \
     --online --engines yandex,lens --md laporan.md
+
+# Analisis AI penglihatan: model membaca isi gambar (butuh kunci API)
+export OPENAI_API_KEY=sk-...
+python3 -m app.cli analyze foto.jpg --purpose verifikasi_jurnalistik --attest \
+    --ai --md laporan.md
 python3 -m app.cli verify foto.jpg
 python3 -m app.cli index foto.jpg --label "hoaks-2026-08"
 python3 -m app.cli similar foto.jpg

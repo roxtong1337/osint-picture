@@ -88,3 +88,18 @@ Google, dan koordinat dikirim ke OpenStreetMap. Ini berarti:
 - Pencarian **wajah** daring tidak dijalankan oleh alat ini. Yang dijalankan hanya
   pencarian objek dan atribusi sumber.
 - Hasil pencarian balik adalah petunjuk, bukan bukti. Wajib diverifikasi ke sumber asli.
+
+
+## AI penglihatan dan identitas
+
+Analisis AI bersifat **opt-in**. Bila diaktifkan, gambar dikirim ke penyedia
+model AI pihak ketiga.
+
+Alat ini **tidak** mengidentifikasi orang. Yang dilakukan model hanya membaca
+isi gambar untuk menentukan tempat. Larangan itu ditegakkan di tiga tempat:
+prompt melarangnya, daftar bidang membatasi keluaran, dan penyaring pola
+membuang data pribadi (surel, NIK, nomor telepon, nama akun).
+
+Model tetap bisa salah. Setiap kandidat ditandai sebagai dugaan yang wajib
+diverifikasi ke sumber asli, dan model boleh menjawab bahwa lokasi tidak dapat
+ditentukan.
