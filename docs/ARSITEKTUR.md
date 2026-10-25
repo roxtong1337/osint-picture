@@ -13,8 +13,16 @@ Peserta unggah gambar
 perangkat · ELA · OCR · pHash    dikembalikan + alasan penolakan
         │
         ▼
+[Verifikasi] skor autentisitas · riwayat kompresi ·
+             asal platform · deteksi media generatif
+        │
+        ▼
 [Geolokasi] koordinat → peta, zona waktu, elevasi matahari,
             statistik warna, kandidat berperingkat, daftar periksa
+        │
+        ▼
+[Pencarian Balik] indeks hash lokal → kemiripan,
+                  rencana pivot berurutan, buku kerja temuan
         │
         ▼
 [Pivot Identitas] pengenal + sensor + tautan sumber publik resmi
@@ -48,11 +56,48 @@ Semua inti berjalan lokal dan offline. Tautan pencarian balik hanya URL yang dib
 | Modul | Tanggung jawab | Fungsi kunci |
 | --- | --- | --- |
 | `forensics.py` | Baca properti teknis berkas | `analyze()`, `_extract_gps()`, `_device_fingerprint()`, `_ela()`, `_perceptual_hashes()` |
+| `verify.py` | Nilai keaslian & asal gambar | `verify()`, `_recompression_estimate()`, `_platform_origin()`, `_ai_generation_indicators()` |
 | `geolocate.py` | Ubah bukti jadi kandidat lokasi | `geolocate()`, `_solar_elevation()`, `_color_stats()` |
+| `reverse_search.py` | Kemiripan & buku kerja pivot | `find_similar()`, `index_image()`, `pivot_plan()`, `record_finding()`, `attribution_chain()` |
+| `batch.py` | Analisis massal & agregasi | `analyze_many()`, `analyze_folder()`, `to_csv()` |
 | `identity.py` | Ekstraksi & pivot pengenal | `pivot()`, `extract_identifiers()`, `_mask()` |
 | `guardrails.py` | Kepatuhan & audit | `screen_request()`, `log_audit()`, `chain_of_custody()` |
 | `report.py` | Perakit laporan | `build_report()`, `to_markdown()` |
-| `main.py` | API HTTP | `POST /api/analyze` |
+| `cli.py` | Antarmuka baris perintah | `main()` |
+| `main.py` | API HTTP | `POST /api/analyze`, `POST /api/batch` |
+
+## Skor autentisitas
+
+Kebalikan dari skor risiko: makin tinggi, makin meyakinkan gambar asli.
+
+| Bobot | Pemicu |
+| --- | --- |
+| −25 | EXIF kosong |
+| −10 | Tanpa GPS |
+| −25 | Indikasi kompresi ulang/penyuntingan |
+| −10 | Sinyal anti-forensik |
+| −30 / −15 | Indikasi kuat / sedang media generatif |
+| −10 | Residu ELA tinggi |
+
+Pita: TINGGI ≥ 75, SEDANG ≥ 50, RENDAH ≥ 30, SANGAT RENDAH < 30.
+
+## Kemiripan gambar (indeks lokal)
+
+Gambar yang dianalisis disimpan sebagai aHash/dHash/pHash. Pencarian kemiripan
+memakai **dHash dan pHash** sebagai penentu; aHash hanya pelengkap karena mudah
+memberi positif palsu pada gambar datar.
+
+- jarak ≤ 2 → sangat mirip (kemungkinan gambar yang sama)
+- jarak ≤ 6 → mirip (versi kompresi/crop ringan)
+- gambar nyaris rata (`detail_level < 0.05`) → hasil ditandai **tidak andal** dan kemiripan diabaikan
+
+Pencocokan berjalan tanpa internet, sehingga dapat dipakai di lingkungan tertutup
+untuk mendeteksi gambar hoaks yang dipakai ulang.
+
+## Aturan kelayakan laporan
+
+Rantai atribusi hanya berstatus **SIAP DILAPORKAN** bila ada ≥2 sumber independen
+(mesin berbeda) dan minimal satu temuan dengan keyakinan ≥0.55.
 
 ## Skor risiko kebocoran
 

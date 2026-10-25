@@ -8,7 +8,7 @@ from typing import Any
 
 from PIL import Image
 
-from . import forensics, geolocate, guardrails, identity
+from . import forensics, geolocate, guardrails, identity, reverse_search, verify
 
 
 def build_report(
@@ -34,6 +34,8 @@ def build_report(
 
     geo = geolocate.geolocate(analysis, descriptors)
     ident = identity.pivot(analysis, extra)
+    verification = verify.verify(image_bytes, analysis)
+    pivot = reverse_search.pivot_bundle(image_bytes, analysis)
 
     custody = guardrails.chain_of_custody(
         analysis["file"]["sha256"], payload.get("analyst_name", ""), payload.get("purpose", "")
@@ -46,10 +48,12 @@ def build_report(
         "file_name": filename,
         "compliance": decision,
         "chain_of_custody": custody,
-        "summary": _summary(analysis, geo, ident, decision),
+        "summary": _summary(analysis, geo, ident, decision, verification),
         "forensics": analysis,
+        "verification": verification,
         "geolocation": geo,
         "identity_pivot": ident,
+        "reverse_search": pivot,
         "disclaimer": (
             "Hasil ini adalah hipotesis analitis, bukan putusan. Setiap klaim wajib "
             "diverifikasi ulang dengan sumber independen. Penggunaan untuk mengawasi "
@@ -66,12 +70,16 @@ def build_report(
                 "analyst_name": payload.get("analyst_name"),
                 "audit_ref": audit_ref,
                 "risk_score": analysis["risk_score"]["score"],
+                "authenticity_score": verification["authenticity_score"],
                 "gps_present": bool(analysis.get("gps")),
                 "identifier_count": ident["identifier_count"],
                 "summary": report["summary"],
             }
         )
         report["case_id"] = case_id
+        if payload.get("index_image", True):
+            entry = reverse_search.index_image(image_bytes, f"{filename}#{case_id}", analysis)
+            report["indexed_as"] = entry["entry_id"]
 
     report["markdown"] = to_markdown(report)
     return report
@@ -87,7 +95,7 @@ def _as_list(value: Any) -> list[str]:
     return []
 
 
-def _summary(analysis: dict, geo: dict, ident: dict, decision: dict) -> dict[str, Any]:
+def _summary(analysis: dict, geo: dict, ident: dict, decision: dict, verification: dict) -> dict[str, Any]:
     gps = analysis.get("gps")
     return {
         "compliance_ok": decision["allowed"],
@@ -101,6 +109,10 @@ def _summary(analysis: dict, geo: dict, ident: dict, decision: dict) -> dict[str
         "device": analysis["device"].get("model") or analysis["device"].get("device_class"),
         "risk_score": analysis["risk_score"]["score"],
         "risk_band": analysis["risk_score"]["band"],
+        "authenticity_score": verification["authenticity_score"],
+        "authenticity_band": verification["authenticity_band"],
+        "likely_origin": verification["platform_origin"]["likely_origin"],
+        "ai_likelihood": verification["ai_generation"]["ai_likelihood"],
         "next_action": (
             "Jalankan pencarian gambar balik, lalu verifikasi kandidat lokasi di peta."
             if not gps
@@ -134,6 +146,9 @@ def to_markdown(report: dict[str, Any]) -> str:
     add(f"- Pengenal ditemukan: {s['identifiers_found']}")
     add(f"- Perangkat: {s['device']}")
     add(f"- Skor risiko kebocoran: {s['risk_score']}/100 ({s['risk_band']})")
+    add(f"- Skor autentisitas: {s['authenticity_score']}/100 ({s['authenticity_band']})")
+    add(f"- Perkiraan asal unggahan: {s['likely_origin']}")
+    add(f"- Indikasi media AI: {s['ai_likelihood']}")
     add(f"- Langkah berikutnya: {s['next_action']}")
     add("")
 
@@ -177,7 +192,42 @@ def to_markdown(report: dict[str, Any]) -> str:
         add(f"Tidak tersedia: {ocr.get('reason', 'tidak ada teks')}")
     add("")
 
-    add("## 2. Geolokasi")
+    add("## 2. Verifikasi Autentisitas")
+    add("")
+    v = report["verification"]
+    add(f"- Skor autentisitas: {v['authenticity_score']}/100 ({v['authenticity_band']})")
+    add(f"- Interpretasi: {v['interpretation']}")
+    add(f"- Riwayat kompresi: {v['compression_history']['compression_level']}")
+    add(f"- Kualitas JPEG perkiraan: {v['compression_history']['estimated_jpeg_quality']}")
+    for sig in v["compression_history"]["signals"]:
+        add(f"  - {sig}")
+    add(f"- Perkiraan asal: {v['platform_origin']['likely_origin']} (keyakinan {v['platform_origin']['confidence']})")
+    for cand in v["platform_origin"]["candidates"]:
+        add(f"  - {cand['platform']} — {cand['basis']} ({cand['confidence']})")
+    ai = v["ai_generation"]
+    add(f"- Indikasi media generatif: {ai['ai_likelihood']} ({ai['band']})")
+    for sig in ai["signals"]:
+        add(f"  - {sig}")
+    for note in v["score_notes"]:
+        add(f"- Penalti skor: {note}")
+    add("")
+
+    add("## 3. Rencana Pencarian Gambar Balik")
+    add("")
+    rs = report["reverse_search"]
+    for step in rs["pivot_plan"]["steps"]:
+        add(f"{step['step']}. **{step['action']}** — {step['why']}")
+        add(f"   - Tautan: {step['url']}")
+        add(f"   - Catat: {step['record']}")
+    add("")
+    li = rs["local_index"]
+    add(f"- Indeks lokal: {li['size']} gambar, {li['match_count']} kemiripan ditemukan")
+    for m in li["matches"]:
+        add(f"  - `{m['label']}` — {m['verdict']} (jarak rata-rata {m['combined_distance']})")
+    add(f"- {li['interpretation']}")
+    add("")
+
+    add("## 4. Geolokasi")
     add("")
     for c in report["geolocation"]["candidates"]:
         add(f"### Kandidat {c['rank']} — {c['label']}")
@@ -199,7 +249,7 @@ def to_markdown(report: dict[str, Any]) -> str:
         add(f"- [ ] {item}")
     add("")
 
-    add("## 3. Pivot Identitas")
+    add("## 5. Pivot Identitas")
     add("")
     ip = report["identity_pivot"]
     if ip["identifiers"]:
@@ -214,7 +264,7 @@ def to_markdown(report: dict[str, Any]) -> str:
         add(f"- Kekurangan bukti: {gap}")
     add("")
 
-    add("## 4. Kepatuhan & Rantai Bukti")
+    add("## 6. Kepatuhan & Rantai Bukti")
     add("")
     c = report["compliance"]
     add(f"- Tujuan: {c.get('purpose')} — {c.get('purpose_description')}")

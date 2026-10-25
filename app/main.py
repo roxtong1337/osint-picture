@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import guardrails, report
+from . import batch, guardrails, report, reverse_search
 
 MAX_UPLOAD_BYTES = int(os.environ.get("OSINT_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp", "image/gif"}
@@ -141,3 +141,117 @@ async def markdown_report(
 @app.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok", "service": "titik-terang", "version": app.version}
+
+
+# ---------- Pencarian gambar balik & indeks lokal ----------
+
+@app.post("/api/index")
+async def index_image(
+    image: UploadFile = File(...),
+    label: str = Form(...),
+) -> dict:
+    data = await image.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Berkas kosong")
+    return reverse_search.index_image(data, label)
+
+
+@app.get("/api/index/size")
+def index_size() -> dict:
+    return {"size": reverse_search.index_size()}
+
+
+@app.post("/api/similar")
+async def similar(
+    image: UploadFile = File(...),
+    max_distance: int = Form(6),
+) -> dict:
+    data = await image.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Berkas kosong")
+    return reverse_search.find_similar(data, max_distance=max_distance)
+
+
+@app.get("/api/ledger")
+def ledger(case_id: str | None = None) -> dict:
+    return reverse_search.ledger(case_id)
+
+
+@app.post("/api/ledger/finding")
+def add_finding(
+    case_id: str = Form(...),
+    engine: str = Form(...),
+    result_url: str = Form(...),
+    note: str = Form(""),
+    confidence: float = Form(0.5),
+    analyst: str = Form(""),
+) -> dict:
+    return reverse_search.record_finding(case_id, engine, result_url, note, confidence, analyst)
+
+
+@app.get("/api/attribution/{case_id}")
+def attribution(case_id: str) -> dict:
+    return reverse_search.attribution_chain(case_id)
+
+
+# ---------- Mode batch ----------
+
+@app.post("/api/batch")
+async def batch_analyze(
+    images: list[UploadFile] = File(...),
+    purpose: str = Form(...),
+    attestation: bool = Form(False),
+    analyst_name: str = Form(""),
+    note: str = Form(""),
+) -> JSONResponse:
+    if not images:
+        raise HTTPException(status_code=400, detail="Tidak ada berkas")
+    if len(images) > 200:
+        raise HTTPException(status_code=413, detail="Maksimal 200 berkas per batch")
+
+    items: list[tuple[str, bytes]] = []
+    for up in images:
+        data = await up.read()
+        if not data:
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Berkas {up.filename} melebihi batas {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+            )
+        items.append((up.filename or "unnamed", data))
+
+    payload = {
+        "purpose": purpose,
+        "attestation": attestation,
+        "analyst_name": analyst_name,
+        "note": note,
+    }
+    result = batch.analyze_many(items, payload)
+    status = 200 if result["compliance"]["allowed"] else 403
+    return JSONResponse(result, status_code=status)
+
+
+@app.post("/api/batch/csv", response_class=PlainTextResponse)
+async def batch_csv(
+    images: list[UploadFile] = File(...),
+    purpose: str = Form(...),
+    attestation: bool = Form(False),
+    analyst_name: str = Form(""),
+    note: str = Form(""),
+) -> PlainTextResponse:
+    items = []
+    for up in images:
+        data = await up.read()
+        if data:
+            items.append((up.filename or "unnamed", data))
+    result = batch.analyze_many(
+        items,
+        {
+            "purpose": purpose,
+            "attestation": attestation,
+            "analyst_name": analyst_name,
+            "note": note,
+        },
+    )
+    return PlainTextResponse(batch.to_csv(result), media_type="text/csv")

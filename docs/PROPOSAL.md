@@ -40,6 +40,10 @@ Jejak ini punya dua sisi. Bagi **penyidik dan jurnalis**, ini bukti berharga unt
 | Ketergantungan | Layanan awan berbayar | Berjalan lokal, tanpa internet |
 | Bukti | Tidak ada | Rantai kustodi + hash + ID kasus |
 | Tingkat keyakinan | Tidak dibedakan | 0.95 / 0.55 / 0.35 / 0.10 eksplisit |
+| Keaslian gambar | Tidak dinilai | Skor autentisitas + asal platform + deteksi AI |
+| Gambar dipakai ulang | Tidak terdeteksi | Indeks hash perseptual lokal, tanpa internet |
+| Kelayakan laporan | Tidak ada aturan | Wajib ≥2 sumber independen + keyakinan ≥0.55 |
+| Analisis massal | Satu per satu | Batch 200 gambar + rekomendasi + CSV |
 
 ## 4. Pemenuhan kriteria penilaian
 
@@ -52,11 +56,13 @@ Menjawab kebutuhan langsung: verifikasi konten untuk penindakan disinformasi, pe
 - **Geolokasi berlapis:** koordinat metadata + zona waktu dari bujur + validasi elevasi matahari (mendeteksi koordinat/waktu palsu) + statistik warna lanskap.
 - **Kepatuhan sebagai arsitektur:** gerbang keputusan sebelum analisis, penyensoran di dalam modul, jejak audit append-only.
 - **Tingkat keyakinan eksplisit** yang memisahkan bukti dari dugaan.
-- **Analisis ELA + deteksi perangkat lunak generatif** untuk menandai gambar AI/palsu.
+- **Verifikasi autentisitas:** skor 0–100 dari riwayat kompresi, residu ELA, dan sinyal perangkat; mendeteksi asal platform (WhatsApp/Instagram) dan media generatif.
+- **Indeks hash perseptual lokal:** mendeteksi gambar hoaks yang dipakai ulang **tanpa internet** — penting untuk lingkungan satuan yang tertutup.
+- **Buku kerja atribusi:** temuan dicatat per mesin, dan laporan hanya boleh keluar bila ada ≥2 sumber independen.
 
 ### Fungsionalitas Purwarupa (25%)
 
-Purwarupa sudah berjalan. 12 tes otomatis lulus, mencakup ekstraksi GPS, hash perseptual, penyensoran NIK, blokir niat stalking, kewajiban pernyataan, dan laporan end-to-end. Antarmuka web lengkap dengan unggah seret-lepas, dasbor hasil, dan unduhan laporan.
+Purwarupa sudah berjalan. 32 tes otomatis lulus, mencakup ekstraksi GPS, hash perseptual, penyensoran NIK, blokir niat stalking, deteksi asal platform, deteksi media generatif, dedup indeks, penolakan gambar rata, rantai atribusi, agregasi batch, dan laporan end-to-end. Antarmuka web lengkap dengan unggah seret-lepas, dasbor hasil, mode batch, dan unduhan laporan. Tersedia juga CLI.
 
 ### Kelayakan Implementasi (15%)
 
@@ -77,6 +83,10 @@ README, dokumen arsitektur, kebijakan etika, proposal ini, plus laporan Markdown
 
 **Kasus C — respons insiden.** Seorang pelaku mengirim foto "bukti" ke korban. Foto itu memuat nomor seri kamera dan koordinat. Penyidik mendapat titik awal yang sah untuk permintaan resmi ke penyedia layanan.
 
+**Kasus D — deteksi gambar daur ulang.** Tim pemantau menemukan foto "bencana hari ini" yang viral. Indeks hash lokal menunjukkan gambar itu sudah pernah diunggah 8 bulan sebelumnya dengan narasi berbeda. Klaim hoaks terbongkar tanpa akses internet.
+
+**Kasus E — deteksi media AI.** Foto "pejabat melakukan tindak pidana" beredar. Sistem mendeteksi penanda perangkat lunak generatif dan skor autentisitas rendah. Tim menahan penyebaran sebelum menjadi krisis.
+
 ## 6. Batas yang kami pegang
 
 Alat ini **tidak** menambang data pribadi, tidak menembus sistem, tidak menampilkan NIK utuh, dan tidak menjalankan pencarian wajah otomatis. Batas ini bukan kelemahan teknis — ini syarat agar alat dapat dipakai institusi negara tanpa melanggar UU 27/2022 (PDP) dan UU 19/2016 (ITE).
@@ -85,10 +95,10 @@ Alat ini **tidak** menambang data pribadi, tidak menembus sistem, tidak menampil
 
 | Fase | Isi |
 | --- | --- |
-| Babak 1 (kini) | Purwarupa berjalan: forensik, geolokasi, pivot identitas, kepatuhan, laporan |
-| Setelah final | Antrean batch, OCR multi-bahasa, pencocokan papan nama ke OpenStreetMap |
+| Babak 1 (kini) | Purwarupa berjalan: forensik, verifikasi autentisitas, geolokasi, pivot identitas, pencarian balik, mode batch, kepatuhan, laporan, CLI |
+| Setelah final | Antrean batch asinkron, OCR multi-bahasa, pencocokan papan nama ke OpenStreetMap |
 | Skala satuan | Mode multi-pengguna + peran, tanda tangan kriptografis laporan, integrasi SIEM |
-| Riset lanjut | Model lanskap lokal offline, deteksi media generatif berbasis model |
+| Riset lanjut | Model lanskap lokal offline, deteksi media generatif berbasis model, pencocokan wajah terverifikasi |
 
 ## 8. Rujukan hukum
 

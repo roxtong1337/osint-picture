@@ -131,6 +131,19 @@
     <div>
       <div id="banners"></div>
       <div id="output"><div class="card empty">Hasil analisis akan tampil di sini.</div></div>
+      <div class="card" id="batchCard" style="margin-top:18px">
+        <h2>Mode Batch — Kampanye Kesadaran Digital</h2>
+        <p class="muted">Unggah banyak foto sekaligus untuk mengukur berapa persen yang masih membocorkan GPS &amp; metadata perangkat. Hasilnya bisa diunduh sebagai CSV.</p>
+        <input type="file" id="batchFiles" multiple accept="image/*" />
+        <label style="margin-top:12px">Tujuan penggunaan (wajib)</label>
+        <select id="batchPurpose"><option value="">— pilih tujuan —</option></select>
+        <label style="display:flex;gap:9px;align-items:center;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);margin-top:12px">
+          <input type="checkbox" id="batchAttest" style="width:auto" />
+          <span>Saya menyatakan memiliki dasar sah untuk menganalisis kumpulan berkas ini.</span>
+        </label>
+        <button class="go" type="button" id="batchGo">Analisis Batch</button>
+        <div id="batchOut"></div>
+      </div>
       <div class="card" id="casesCard" style="margin-top:18px">
         <h2>Kasus Terakhir</h2>
         <div id="cases" class="muted">Memuat…</div>
@@ -150,9 +163,11 @@ let FILE = null, DESCRIPTORS = [];
 async function boot() {
   const r = await fetch('/api/purposes').then(x => x.json());
   r.purposes.forEach(p => {
-    const o = document.createElement('option');
-    o.value = p.id; o.textContent = p.label;
-    $('purpose').appendChild(o);
+    for (const sel of [$('purpose'), $('batchPurpose')]) {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.label;
+      sel.appendChild(o);
+    }
   });
   $('desc').innerHTML = r.descriptors.map(d =>
     `<span class="chip" data-id="${d.id}">${d.label}</span>`).join('');
@@ -256,6 +271,9 @@ function render(r) {
       <div class="kpi"><div class="k">Kandidat Lokasi</div><div class="v">${s.candidate_locations}</div></div>
       <div class="kpi"><div class="k">Pengenal</div><div class="v">${s.identifiers_found}</div></div>
       <div class="kpi"><div class="k">Perangkat</div><div class="v" style="font-size:14px">${esc(s.device)}</div></div>
+      <div class="kpi"><div class="k">Autentisitas</div><div class="v">${s.authenticity_score}</div>
+        <div class="muted">${esc(s.authenticity_band)}</div></div>
+      <div class="kpi"><div class="k">Asal Unggah</div><div class="v" style="font-size:14px">${esc(s.likely_origin)}</div></div>
     </div>
     <p style="margin-top:14px">${esc(s.location_headline)}</p>
     <p class="muted">Langkah berikutnya: ${esc(s.next_action)}</p>
@@ -328,6 +346,8 @@ function render(r) {
     <p class="muted">${esc(ip.reporting_rule)}</p></details></div>`;
 
   // Forensik teknis
+  html += renderVerification(r.verification);
+  html += renderPivot(r.reverse_search);
   html += `<div class="card" style="margin-top:18px"><h2>Forensik Berkas</h2>
     <div class="kpis">
       <div class="kpi"><div class="k">Format</div><div class="v" style="font-size:15px">${esc(f.file.format)}</div></div>
@@ -383,6 +403,125 @@ function dl(name, text, type) {
 }
 function downloadMd() { dl('laporan-osint.md', window.__report.markdown, 'text/markdown'); }
 function downloadJson() { dl('laporan-osint.json', JSON.stringify(window.__report, null, 2), 'application/json'); }
+
+$('batchGo').onclick = async () => {
+  const files = $('batchFiles').files;
+  const out = $('batchOut');
+  if (!files.length) { out.innerHTML = '<div class="banner err">Pilih berkas gambar.</div>'; return; }
+  if (!$('batchPurpose').value) { out.innerHTML = '<div class="banner err">Pilih tujuan penggunaan.</div>'; return; }
+
+  const fd = new FormData();
+  for (const f of files) fd.append('images', f);
+  fd.append('purpose', $('batchPurpose').value);
+  fd.append('attestation', $('batchAttest').checked);
+  fd.append('analyst_name', $('analyst_name').value);
+
+  const btn = $('batchGo');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Memproses…';
+  out.innerHTML = '';
+  try {
+    const res = await fetch('/api/batch', { method: 'POST', body: fd });
+    const d = await res.json();
+    if (!d.aggregate) { out.innerHTML = `<div class="banner err">${esc(d.detail || 'Gagal')}</div>`; return; }
+    if (!d.compliance.allowed) {
+      out.innerHTML = `<div class="banner err">DITOLAK: ${esc(d.compliance.errors.join(' '))}</div>`;
+      return;
+    }
+    const a = d.aggregate;
+    out.innerHTML = `<div class="banner ok">${d.count} berkas dianalisis · audit ${d.audit_ref}</div>
+      <div class="kpis">
+        <div class="kpi"><div class="k">Berkas</div><div class="v">${a.count}</div></div>
+        <div class="kpi"><div class="k">Punya GPS</div><div class="v">${(a.gps_ratio*100).toFixed(0)}%</div>
+          <div class="bar"><i style="width:${a.gps_ratio*100}%"></i></div>
+          <div class="muted">${a.gps_present} berkas</div></div>
+        <div class="kpi"><div class="k">EXIF Utuh</div><div class="v">${(a.exif_ratio*100).toFixed(0)}%</div></div>
+        <div class="kpi"><div class="k">Rata Risiko</div><div class="v">${a.avg_risk_score}</div></div>
+        <div class="kpi"><div class="k">Rata Autentisitas</div><div class="v">${a.avg_authenticity}</div></div>
+      </div>
+      <details style="margin-top:12px"><summary>Rekomendasi (${d.recommendations.length})</summary>
+        <div><ul class="checklist">${d.recommendations.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div></details>
+      <details><summary>Rincian per berkas (${d.rows.length})</summary><div>
+        <table><tr><th>Berkas</th><th>GPS</th><th>Perangkat</th><th>Risiko</th><th>Autentisitas</th><th>Asal</th></tr>
+        ${d.rows.map(r => `<tr><td>${esc(r.file)}</td><td>${r.gps_present ? 'ada' : '-'}</td>
+          <td>${esc(r.device)}</td><td>${r.risk_score}</td><td>${r.authenticity_score}</td>
+          <td>${esc(r.likely_origin)}</td></tr>`).join('')}</table></div></details>
+      <button class="chip" style="margin-top:10px" onclick='downloadBatchCsv()'>Unduh CSV</button>`;
+    window.__batch = d;
+    loadCases();
+  } catch (e) {
+    out.innerHTML = `<div class="banner err">Gagal: ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Analisis Batch';
+  }
+};
+
+function downloadBatchCsv() {
+  const rows = window.__batch.rows;
+  const fields = ['file','sha256','format','megapixels','gps_present','latitude','longitude','device','device_class','exif_present','exif_tags','software','ocr_chars','ela_verdict','risk_score','risk_band','authenticity_score','authenticity_band','likely_origin','ai_likelihood'];
+  const esc2 = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [fields.join(',')].concat(rows.map(r => fields.map(f => esc2(r[f])).join(','))).join('\n');
+  dl('hasil-batch.csv', csv, 'text/csv');
+}
+
+function renderVerification(v) {
+  const ph = v.platform_origin, ch = v.compression_history, ai = v.ai_generation;
+  return `<div class="card" style="margin-top:18px"><h2>Verifikasi Autentisitas</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Autentisitas</div><div class="v">${v.authenticity_score}<span class="muted">/100</span></div>
+        <div class="bar"><i style="width:${v.authenticity_score}%"></i></div><div class="muted">${v.authenticity_band}</div></div>
+      <div class="kpi"><div class="k">Asal Unggahan</div><div class="v" style="font-size:15px">${esc(ph.likely_origin)}</div>
+        <div class="muted">keyakinan ${(ph.confidence*100).toFixed(0)}%</div></div>
+      <div class="kpi"><div class="k">Indikasi AI</div><div class="v">${(ai.ai_likelihood*100).toFixed(0)}%</div>
+        <div class="muted">${ai.band}</div></div>
+      <div class="kpi"><div class="k">Kualitas JPEG</div><div class="v" style="font-size:15px">${ch.estimated_jpeg_quality ?? '-'}</div></div>
+    </div>
+    <p style="margin-top:12px">${esc(v.interpretation)}</p>
+    ${v.score_notes.length ? `<p class="muted">Penalti skor: ${esc(v.score_notes.join(' · '))}</p>` : ''}
+    <details><summary>Riwayat kompresi — ${esc(ch.compression_level)}</summary><div>
+      <ul class="checklist">${ch.signals.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+      <p class="muted">Block noise ${ch.block_noise} · rasio frekuensi tinggi ${ch.high_freq_ratio}</p></div></details>
+    <details><summary>Kandidat asal platform (${ph.candidates.length})</summary><div>
+      <table><tr><th>Platform</th><th>Dasar</th><th>Keyakinan</th></tr>
+      ${ph.candidates.map(c => `<tr><td>${esc(c.platform)}</td><td>${esc(c.basis)}</td><td>${c.confidence}</td></tr>`).join('')}</table>
+      <p class="muted">${esc(ph.note)}</p></div></details>
+    <details><summary>Deteksi media generatif (${ai.band})</summary><div>
+      <ul class="checklist">${ai.signals.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+      <p class="muted">${esc(ai.caveat)}</p></div></details>
+  </div>`;
+}
+
+function renderPivot(rs) {
+  let h = `<div class="card" style="margin-top:18px"><h2>Pencarian Gambar Balik</h2>`;
+  h += `<div class="kpis">
+    <div class="kpi"><div class="k">Indeks Lokal</div><div class="v">${rs.local_index.size}</div></div>
+    <div class="kpi"><div class="k">Kemiripan</div><div class="v">${rs.local_index.match_count}</div></div>
+  </div>`;
+  h += `<p class="muted">${esc(rs.local_index.interpretation)}</p>`;
+  if (rs.local_index.matches.length) {
+    h += `<table><tr><th>Label</th><th>Putusan</th><th>Jarak</th></tr>` +
+      rs.local_index.matches.map(m => `<tr><td>${esc(m.label)}</td><td>${esc(m.verdict)}</td>
+      <td>${m.combined_distance}</td></tr>`).join('') + `</table>`;
+  }
+  h += `<details open><summary>Rencana langkah (${rs.pivot_plan.steps.length})</summary><div>`;
+  rs.pivot_plan.steps.forEach(s => {
+    h += `<div class="cand"><div class="h"><strong>${s.step}. ${esc(s.action)}</strong>
+      <span class="conf">${esc(s.engine)}</span></div>
+      <div class="muted">${esc(s.why)}</div>
+      <div class="links"><a href="${s.url}" target="_blank" rel="noopener">buka mesin ↗</a></div>
+      <div class="muted">Catat: ${esc(s.record)}</div></div>`;
+  });
+  h += `<p class="muted">${esc(rs.pivot_plan.ethics_note)}</p></div></details>`;
+  h += `<details><summary>Mesin pencarian balik (${rs.engines.length})</summary><div class="links">
+    ${rs.engines.map(l => `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.engine)} ↗</a><span class="muted"> — ${esc(l.note)}</span><br/>`).join('')}</div></details>`;
+  if (rs.map_links.length) {
+    h += `<details><summary>Validasi peta (${rs.map_links.length})</summary><div class="links">
+      ${rs.map_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)} ↗</a>`).join(' · ')}</div></details>`;
+  }
+  h += `<details><summary>Mesin pencarian wajah</summary><div class="links">
+    ${rs.face_engines.map(l => `<a href="${l.url}" target="_blank" rel="noopener">${esc(l.provider)} ↗</a><span class="muted"> — ${esc(l.note)}</span><br/>`).join('')}</div></details>`;
+  h += `</div>`;
+  return h;
+}
 
 boot();
 </script>
